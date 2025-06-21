@@ -54,7 +54,8 @@ dependencies = [
     "pymongo",
     "spacy==3.7.3",
     "anthropic = ^0.26",
-    "google-generativeai = ^0.5"
+    "google-generativeai = ^0.5",
+    "python-dotenv = ^1.0"
 ]
 
 [project.optional-dependencies]
