@@ -7,7 +7,7 @@ Run with `accelerate` from repository root (for naive parallelization):
     =>> [Single-GPU] CUDA_VISIBLE_DEVICES={0-7} accelerate launch --num_processes=1 scripts/evaluate.py < args >
     =>> [Multi-GPU]  accelerate launch --num_processes={>1} scripts/evaluate.py < args >
 """
-from load_keys import load_keys
+from vlm_eval.util.load_keys import load_keys
 load_keys()
 
 import os

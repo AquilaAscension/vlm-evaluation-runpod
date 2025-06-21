@@ -7,7 +7,7 @@ verification process, writing both WebDataset and Mosaic Streaming (MDS) version
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
-from load_keys import load_keys
+from vlm_eval.util.load_keys import load_keys
 load_keys()
 
 import os
