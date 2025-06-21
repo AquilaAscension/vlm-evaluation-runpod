@@ -49,10 +49,12 @@ dependencies = [
     "torch>=2.1.0",
     "torchvision",
     "torchaudio",
-    "transformers==4.34.1", ## Pinned to avoid namespace conflict with LLaVa models
+    "transformers = >=4.38,<4.40",
     "webdataset",
     "pymongo",
-    "spacy==3.7.3"
+    "spacy==3.7.3",
+    "anthropic = ^0.26",
+    "google-generativeai = ^0.5"
 ]
 
 [project.optional-dependencies]
