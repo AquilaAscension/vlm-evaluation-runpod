@@ -4,6 +4,9 @@ prepare.py
 Entry point for dataset downloading & preparation -- handles all aspects of the raw data acquisition, extraction, and
 verification process, writing both WebDataset and Mosaic Streaming (MDS) versions of the data.
 """
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 from load_keys import load_keys
 load_keys()
 
