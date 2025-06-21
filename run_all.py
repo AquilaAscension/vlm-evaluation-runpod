@@ -64,7 +64,7 @@ def main():
         yaml_str = f"""\
 model_family: {cfg['model_family']}
 model_id: {cfg['model_id']}
-run_dir: {cfg['model_dir']}
+model_dir: {cfg['model_dir']}
 
 dataset:
   type: {dset}
