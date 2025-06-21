@@ -9,7 +9,6 @@ from .prismatic import PrismaticVLM
 from .open_hf import OpenHF
 from .anthropic_loader import AnthropicVLM
 from .google_loader import GeminiVLM
-from .ernie_loader import ErnieVLM
 
 
 # === Initializer Dispatch by Family ===
@@ -18,8 +17,7 @@ FAMILY2INITIALIZER = {
     "prismatic":      PrismaticVLM,
     "open-hf":        OpenHF,
     "anthropic":      AnthropicVLM,
-    "google":         GeminiVLM,
-    "ernie":          ErnieVLM
+    "google":         GeminiVLM
 }
 
 
