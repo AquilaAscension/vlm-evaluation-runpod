@@ -45,7 +45,7 @@ class DatasetPreparationConfig:
     mds_hashes: Tuple[str, str] = ("sha1", "xxh64")             # [Mosaic] Pair of (crypto, non-crypto) hash functions
 
     # Path Parameters
-    root_dir: Path = Path("datasets/vlm-evaluation")
+    root_dir: Path = Path("/home/ubuntu/datasets/vlm-evaluation")
 
     # HF Hub Credentials (for LLaMa-2)
     hf_token: Union[str, Path] = Path(".hf_token")              # Env Variable or Path to HF Token
