@@ -26,7 +26,7 @@ def download_with_progress(url: str, download_dir: Path, chunk_size_bytes: int =
 
     # Fire an HTTP Request, with `stream = True` => we at least want the Request Headers to validate!
     if hf_token is None:
-        response = requests.get(url, stream=True)
+        response = requests.get(url, stream=True, verify=not url.startswith("https://downloads.cs.stanford.edu/"))
     else:
         response = requests.get(url, headers={"Authorization": f"Bearer {hf_token}"}, stream=True)
 
