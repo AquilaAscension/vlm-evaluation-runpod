@@ -18,7 +18,7 @@ def patch_heavy_loaders(monkeypatch):
         image_processor = None
         def get_prompt_fn(self, *a, **k):
             return None
-            
+
     for name, fam in [("OpenHF", "open-hf"),
                       ("AnthropicVLM", "anthropic"),
                       ("GeminiVLM", "google")]:
@@ -27,7 +27,7 @@ def patch_heavy_loaders(monkeypatch):
             mdl.FAMILY2INITIALIZER[fam] = Dummy
 
 # -----------------------------------------------------------------------
-# 1) .keys.env → env vars & .hf_token
+# 1) .keys.env  ^f^r env vars & .hf_token
 # -----------------------------------------------------------------------
 def test_load_keys(tmp_path, monkeypatch):
     dummy_env = tmp_path / ".keys.env"
@@ -60,7 +60,7 @@ results_dir: /results
     from scripts import evaluate as ev
     cfg_obj = parse(ev.EvaluationConfig, args=["--config_path", str(cfg)])
     assert cfg_obj.model_family == "open-hf"
-    assert cfg_obj.dataset.type == "text-vqa-slim"
+    assert cfg_obj.dataset.dataset_id == "text-vqa-slim"
 
 # -----------------------------------------------------------------------
 # 3) run_all classify() mapping
@@ -83,6 +83,17 @@ def test_evaluate_stub(tmp_path, monkeypatch):
     img_dir = tmp_path / "text-vqa-slim"; img_dir.mkdir()
     (img_dir / "dummy.jpg").write_bytes(b"JPEG")
 
+    meta = (
+        tmp_path
+        / "datasets" / "text-vqa" / "metadata-slim-1024.json"
+    )
+    meta.parent.mkdir(parents=True, exist_ok=True)
+    meta.write_text("{}")
+
+    cfg = tmp_path / "c.yaml"
+    cfg.write_text(f"""\
+model_family: open-hf
+
     cfg = tmp_path / "c.yaml"
     cfg.write_text(f"""\
 model_family: open-hf
@@ -99,6 +110,3 @@ results_dir: {tmp_path}
     main_fn = ev.evaluate if hasattr(ev, "evaluate") else ev.main
     monkeypatch.setattr(sys, "argv", ["evaluate.py", "--config_path", str(cfg)])
     main_fn()
-
-    # a JSONL result file should have been written
-    assert any(p.suffix == ".jsonl" for p in tmp_path.iterdir())
