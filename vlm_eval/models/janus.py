@@ -1,38 +1,81 @@
-
+# vlm_eval/models/janus.py
 from pathlib import Path
-from typing import Optional
-import torch
-from janus.modeling import JanusForCausalLM  # hypothetical; import from DeepSeek repo
-from transformers import AutoTokenizer, AutoProcessor
+from typing import Optional, Dict, Any, List
 
-from vlm_eval.util.interfaces import VLM
+import torch
+from PIL import Image
+
+from transformers import AutoTokenizer  # only for decode convenience
+from janus.models import MultiModalityCausalLM, VLChatProcessor
+
+from vlm_eval.util.interfaces import VLM   # base class in the repo
+
 
 class JanusVLM(VLM):
+    """
+    Thin wrapper so Janus fits the repo's VLM interface:
+    ´generate(image_path, prompt) -> str´
+    """
+
     def __init__(
         self,
         model_family: str,
         model_id: str,
-        run_dir: Path,
+        model_dir: str,
         hf_token: Optional[str] = None,
-        load_precision="bf16",
+        load_precision: str = "bfloat16",
         **kw,
     ):
-        repo = model_id if "/" in model_id else f"deepseek-ai/{model_id}"
         auth = {"token": hf_token} if hf_token else {}
-        self.tokenizer  = AutoTokenizer.from_pretrained(repo, **auth)
-        self.processor  = AutoProcessor.from_pretrained(repo, **auth)
-        self.model      = JanusForCausalLM.from_pretrained(
-                              repo,
-                              torch_dtype=getattr(torch, load_precision),
-                              device_map="auto",
-                              **auth)
-        # Janus’ own generate args may differ:
-        self.gen_kwargs = dict(max_new_tokens=64, temperature=0.2)
+        dtype = torch.bfloat16 if load_precision.startswith("bf") else torch.float16
 
-    def get_prompt_fn(self, dataset_name):          # required by harness
-        return lambda q: q
+        self.processor = VLChatProcessor.from_pretrained(model_dir, **auth)
+        self.tokenizer = self.processor.tokenizer
 
-    def generate(self, image_path, prompt):
-        inputs = self.processor(images=image_path, text=prompt, return_tensors="pt").to(self.model.device)
-        out_ids = self.model.generate(**inputs, **self.gen_kwargs)
-        return self.tokenizer.decode(out_ids[0], skip_special_tokens=True)
+        self.model = MultiModalityCausalLM.from_pretrained(
+            model_dir,
+            torch_dtype=dtype,
+            device_map="auto",
+            trust_remote_code=True,
+            **auth,
+        )
+
+        # one-liner wrapper that repo’s evaluation harness expects
+        self.image_processor = None   # not used by Janus
+
+    # ------------------------------------------------------------------
+    def get_prompt_fn(self, dataset_family: str):
+        """
+        Returns a closure the harness will call to wrap each VQA question.
+        For Janus we need to insert <image_placeholder>.
+        """
+        def _fn(question: str) -> str:
+            return f"<image_placeholder>\n{question}"
+        return _fn
+
+    # ------------------------------------------------------------------
+    @torch.inference_mode()
+    def generate(self, image_path: str, prompt: str) -> str:
+        img = Image.open(image_path).convert("RGB")
+
+        conversation = [
+            {"role": "<|User|>", "content": f"<image_placeholder>\n{prompt}", "images": [img]},
+            {"role": "<|Assistant|>", "content": ""},
+        ]
+
+        inputs = self.processor(
+            conversations=conversation,
+            images=[img],
+            force_batchify=True
+        ).to(self.model.device, dtype=self.model.dtype)
+
+        embeds = self.model.prepare_inputs_embeds(**inputs)
+        out = self.model.language_model.generate(
+            inputs_embeds=embeds,
+            attention_mask=inputs.attention_mask,
+            max_new_tokens=64,
+            eos_token_id=self.tokenizer.eos_token_id,
+            pad_token_id=self.tokenizer.eos_token_id,
+            do_sample=False,
+        )
+        return self.tokenizer.decode(out[0], skip_special_tokens=True)
