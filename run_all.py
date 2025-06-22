@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 run_all.py  –  Evaluate one model on TextVQA-Slim, VQA-v2-Slim, and GQA
+
 Usage:
   # open-weight HF repo (string or URL)
   python run_all.py mistralai/Pixtral-12B
@@ -19,26 +20,26 @@ sys.path.insert(0, str(REPO_ROOT))
 
 # ---- load keys (works whether in utils/ or repo root) -------
 try:
-    from vlm_eval.utils.load_keys import load_keys
+    from vlm_eval.util.load_keys import load_keys
 except ModuleNotFoundError:
     from load_keys import load_keys  # fallback for old placement
 load_keys()
 
 # ---------------- constants ----------------------------------
 DATASETS = ["text-vqa-slim", "vqa-v2-slim", "gqa"]
-RESULTS_DIR = "/home/ubuntu/prismatic-vlms/results"
-ROOT_DATA = "/home/ubuntu/datasets/vlm-evaluation"
+RESULTS_DIR = os.environ.get("RESULTS_DIR", "/home/ubuntu/prismatic-vlms/results")
+ROOT_DATA = os.environ.get("ROOT_DATA", "/home/ubuntu/datasets/vlm-evaluation")
 
 # ---------------- helper funcs -------------------------------
 def classify(arg: str):
     """Return dict with model_family, model_id, model_dir fields."""
     arg = arg.strip()
     # closed APIs
-    if re.fullmatch(r"claude(-sonnet4)?", arg, re.I):
+    if re.fullmatch(r"claude(-sonnet4|-4-sonnet)?", arg, re.I):
         return dict(model_family="anthropic",
-                    model_id="claude-3-sonnet-20240229",
+                    model_id="claude-4-sonnet-20250522",
                     model_dir="")
-    if re.fullmatch(r"gemini(-flash)?", arg, re.I):
+    if re.fullmatch(r"gemini(?:-?2\.5)?(?:-flash)?", arg, re.I):
         return dict(model_family="google",
                     model_id="gemini-2.5-flash",
                     model_dir="")
