@@ -66,6 +66,7 @@ def main():
 model_family: {cfg['model_family']}
 model_id: {cfg['model_id']}
 model_dir: {cfg['model_dir']}
+run_dir: {cfg['model_dir']}
 
 dataset:
   type: {dset}
