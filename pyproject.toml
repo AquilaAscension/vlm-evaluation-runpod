@@ -41,7 +41,7 @@ dependencies = [
     "llava @ git+https://github.com/suraj-nair-tri/LLaVA",
     "mosaicml-streaming",
     "openai",
-    "prismatic @ git+https://github.com/TRI-ML/prismatic-vlms",
+    "prismatic @ git+https://github.com/AquilaAscension/prismatic-vlms",
     "pycocotools",
     "rich",
     "scikit-image",
