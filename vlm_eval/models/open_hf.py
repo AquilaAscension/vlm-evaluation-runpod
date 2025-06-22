@@ -12,7 +12,7 @@ from typing import Optional
 
 import torch
 from PIL import Image
-from transformers import AutoModelForCausalLM, AutoProcessor, AutoTokenizer
+from transformers import AutoModel, AutoProcessor, AutoTokenizer
 
 class OpenHF:
     def __init__(self, model_id: str, model_dir: str = "", hf_token: Optional[str] = None, **_):
@@ -26,7 +26,7 @@ class OpenHF:
             auth_args = {"token": hf_token}
         self.tokenizer = AutoTokenizer.from_pretrained(repo, trust_remote_code=True, **auth_args)
         self.processor = AutoProcessor.from_pretrained(repo, trust_remote_code=True, resume_download=True, **auth_args)
-        self.model = AutoModelForCausalLM.from_pretrained(repo, torch_dtype=torch.float16,
+        self.model = AutoModel.from_pretrained(repo, torch_dtype=torch.float16,
                                                           trust_remote_code=True, device_map="auto", **auth_args)
 
     def generate(self, image_path: str | Path, prompt: str) -> str:
