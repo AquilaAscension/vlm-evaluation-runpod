@@ -45,7 +45,8 @@ def classify(arg: str):
                     model_dir="")
     # open-weight HF
     repo = arg.replace("https://huggingface.co/", "").rstrip("/")
-    return dict(model_family="open-hf", model_id=repo.split("/")[-1], model_dir=repo)
+    safe_name = repo.replace("/", "_")
+    return dict(model_family="open-hf", model_id=safe_name, model_dir=repo)
 
 def run(cmd):
     print("\n$ " + " ".join(cmd), flush=True)
