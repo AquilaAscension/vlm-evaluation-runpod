@@ -94,6 +94,8 @@ def evaluate_after_parse(cfg, vlm=None):
     overwatch.info("Initializing VLM =>> Bundling Models, Image Processors, and Tokenizer")
     hf_token = cfg.hf_token.read_text().strip() if isinstance(cfg.hf_token, Path) else os.environ[cfg.hf_token]
     if vlm is None:
+        if cfg.run_dir is None or str(cfg.run_dir).strip() == "":
+            cfg.run_dir = cfg.model_dir
         vlm = load_vlm(cfg.model_family, cfg.model_id, cfg.run_dir, hf_token=hf_token, ocr=cfg.dataset.ocr)
 
     # Create Task Runner
