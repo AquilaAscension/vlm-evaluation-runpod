@@ -73,6 +73,8 @@ class EvaluationConfig:
     # Randomness
     seed: int = 21                                  # Random Seed (for reproducibility)
 
+    run_dir: Optional[str] = None
+    
     def __post_init__(self) -> None:
         self.run_dir = self.model_dir
 
