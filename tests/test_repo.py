@@ -16,7 +16,9 @@ def patch_heavy_loaders(monkeypatch):
         def generate(self, image_path, prompt):
             return f"dummy-answer({pathlib.Path(image_path).name})"
         image_processor = None
-
+        def get_prompt_fn(self, *a, **k):
+            return None
+            
     for name, fam in [("OpenHF", "open-hf"),
                       ("AnthropicVLM", "anthropic"),
                       ("GeminiVLM", "google")]:
@@ -56,7 +58,7 @@ results_dir: /results
 """)
     from draccus import parse  # call Draccus directly
     from scripts import evaluate as ev
-    cfg_obj = parse(ev.EvaluationConfig, config_path=str(cfg))
+    cfg_obj = parse(ev.EvaluationConfig, args=["--config_path", str(cfg)])
     assert cfg_obj.model_family == "open-hf"
     assert cfg_obj.dataset.type == "text-vqa-slim"
 
