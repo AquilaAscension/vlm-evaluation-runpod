@@ -58,6 +58,7 @@ def test_classify(arg, expect):
 @pytest.fixture(autouse=True)
 def patch_heavy_loaders(monkeypatch):
     """Replace heavy VLM classes with lightweight echoes."""
+    import importlib, vlm_eval.models as _m
     class Dummy:
         def __init__(self, *a, **k): pass
         def generate(self, image_path, prompt):
