@@ -31,7 +31,22 @@ def load_vlm(
     max_length=128,
     temperature=1.0,
 ) -> VLM:
-    assert model_family in FAMILY2INITIALIZER, f"Model family `{model_family}` not supported!"
+    if model_family == "open-hf":
+        # ------------------------------------------------------------------
+        # Pass the **full repo-id** (run_dir) to OpenHF as its first arg
+        # ------------------------------------------------------------------
+        return OpenHF(
+            str(run_dir),                 # <— deepseek-ai/Janus-Pro-7B
+            hf_token=hf_token,
+            load_precision=load_precision,
+            max_length=max_length,
+            temperature=temperature,
+            ocr=ocr,
+        )
+
+    # all other families stay unchanged
+    assert model_family in FAMILY2INITIALIZER, \
+        f"Model family `{model_family}` not supported!"
     return FAMILY2INITIALIZER[model_family](
         model_family=model_family,
         model_id=model_id,
@@ -42,3 +57,4 @@ def load_vlm(
         temperature=temperature,
         ocr=ocr,
     )
+
