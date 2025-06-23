@@ -425,7 +425,10 @@ class VQAEvaluator:
         # Compute Accuracy
         for qid in tqdm(question_ids, desc="[*] Computing Accuracy", leave=False):
             result_answer = result_qid2ann[qid]["answer"]
-            result_answer = result_answer.replace("\n", " ").replace("\t", " ").strip()
+            if result_answer is None:
+                result_answer = ""
+            else:
+                result_answer = result_answer.replace("\n", " ").replace("\t", " ").strip()
             result_answer = process_punctuation(result_answer)
             result_answer = process_digits_articles_contractions(result_answer)
 
