@@ -282,7 +282,10 @@ class GQAScorer:
         # Convert to GQA Expected Format --> with answer formatting (strip punctuation & lowercase)
         predictions = []
         for example in self.full_result_qa_pairs.values():
-            clean_prediction = example["model_output"].translate(str.maketrans("", "", string.punctuation)).lower()
+            pred = example["model_output"]
+            if pred is None:                # <-- add these two lines
+                pred = ""     
+            clean_prediction = pred.translate(str.maketrans("", "", string.punctuation)).lower()
             predictions.append({"questionId": example["question_id"], "prediction": clean_prediction})
 
         # Write Predictions to Disk
