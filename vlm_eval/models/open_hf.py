@@ -12,22 +12,39 @@ from typing import Optional, Tuple
 
 import torch
 from PIL import Image
-from transformers import AutoModel, AutoProcessor, AutoTokenizer, LlamaTokenizer, LlamaTokenizerFast
+from transformers import AutoModel, AutoProcessor, AutoTokenizer
 import sentencepiece as spm
 
 def _safe_load_tokenizer(repo: str, **auth) -> Tuple[object, str]:
     last_err = None
 
-    # a) Try AutoTokenizer (slow, but safest)
+    # 1️⃣  Try the repo’s own (usually fast) tokenizer ― this is what Pixtral expects
     try:
         tok = AutoTokenizer.from_pretrained(
-            repo, trust_remote_code=True, use_fast=False, legacy=True, **auth
+            repo,
+            trust_remote_code=True,   # lets Pixtral’s custom class register itself
+            use_fast=True,            # prefers tokenizer.json → avoids SentencePiece
+            legacy=False,
+            **auth
         )
-        return tok, "auto-tokenizer"
+        return tok, "auto-fast/custom"
+    except Exception as e:
+        last_err = e                     # remember the error and fall through
+
+    # 2️⃣  Slow fallback (for odd cases that really do need the .model)
+    try:
+        tok = AutoTokenizer.from_pretrained(
+            repo,
+            trust_remote_code=True,
+            use_fast=False,
+            legacy=True,
+            **auth
+        )
+        return tok, "auto-slow"
     except Exception as e:
         last_err = e
 
-    # b) Give up
+    # 3️⃣  If both routes explode, re-raise
     raise RuntimeError(f"[OpenHF] failed to load tokenizer for {repo}") from last_err
 
 class OpenHF:
