@@ -47,10 +47,8 @@ def _safe_load_tokenizer(repo: str, **auth) -> Tuple[object, str]:
     # c) Manual SentencePiece (many LLaMA-derivatives mis-label this file)
     try:
         # Hugging-Face download cache path for this repo
-        repo_cache = (
-            Path(AutoTokenizer.cache_dir or Path.home() / ".cache" / "huggingface")
-            / repo.replace("/", "--")
-        )
+        repo_cache = (Path.home() / ".cache" / "huggingface" / "hub" / ("models--" + repo.replace("/", "--")))
+
         spm_files = list(repo_cache.rglob("*.model"))
         if spm_files:
             tok = LlamaTokenizerFast(
