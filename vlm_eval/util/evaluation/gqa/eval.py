@@ -404,6 +404,10 @@ def chiSquare(goldDist, predictedDist):
 for qid, question in tqdm(questions.items()):
     gold = question["answer"]
     predicted = predictions[qid]
+    if predicted is None:
+        predicted = ""
+    else:
+        predicted = predicted.replace("\n", " ").replace("\t", " ").strip()
 
     correct = predicted == gold
     score = toScore(correct)
