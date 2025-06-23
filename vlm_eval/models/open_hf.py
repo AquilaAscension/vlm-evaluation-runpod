@@ -16,59 +16,18 @@ from transformers import AutoModel, AutoProcessor, AutoTokenizer, LlamaTokenizer
 import sentencepiece as spm
 
 def _safe_load_tokenizer(repo: str, **auth) -> Tuple[object, str]:
-    """
-    Try several strategies so that strange repos (e.g., Pixtral) don’t crash.
-
-    Returns
-    -------
-    tokenizer : a Transformers tokenizer instance
-    strategy   : short string describing which branch succeeded
-    """
     last_err = None
 
-    # a) Normal fast tokenizer
-    try:
-        tok = AutoTokenizer.from_pretrained(
-            repo, trust_remote_code=True, use_fast=True, legacy=True, **auth
-        )
-        return tok, "auto-fast"
-    except Exception as e:
-        last_err = e
-
-    # b) Slow tokenizer fallback
+    # a) Try AutoTokenizer (slow, but safest)
     try:
         tok = AutoTokenizer.from_pretrained(
             repo, trust_remote_code=True, use_fast=False, legacy=True, **auth
         )
-        return tok, "auto-slow"
+        return tok, "auto-tokenizer"
     except Exception as e:
         last_err = e
 
-    # c) Manual SentencePiece (many LLaMA-derivatives mis-label this file)
-    try:
-        from transformers import PreTrainedTokenizerFast
-    
-        repo_cache = Path.home() / ".cache" / "huggingface" / "hub"
-        spm_files = list(repo_cache.rglob("*.model"))
-    
-        if spm_files:
-            sp = spm.SentencePieceProcessor()
-            sp.load(str(spm_files[0]))
-    
-            tok = PreTrainedTokenizerFast(
-                tokenizer_object=sp,
-                unk_token="<unk>",
-                pad_token="<pad>",
-                bos_token="<s>",
-                eos_token="</s>",
-            )
-    
-            return tok, f"manual-spm:{spm_files[0].name}"
-    
-    except Exception as e:
-        last_err = e
-
-    # d) Give up – re-raise last error with context
+    # b) Give up
     raise RuntimeError(f"[OpenHF] failed to load tokenizer for {repo}") from last_err
 
 class OpenHF:
