@@ -26,7 +26,7 @@ except ModuleNotFoundError:
 load_keys()
 
 # ---------------- constants ----------------------------------
-DATASETS = ["text-vqa-slim", "vqa-v2-slim", "gqa"]
+DATASETS = ["text-vqa-slim", "vqa-v2-slim", "gqa-slim"]
 RESULTS_DIR = os.environ.get("RESULTS_DIR", "/home/ubuntu/prismatic-vlms/results")
 ROOT_DATA = os.environ.get("ROOT_DATA", "/home/ubuntu/datasets/vlm-evaluation")
 
