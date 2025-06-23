@@ -1,5 +1,5 @@
 """
-OpenHF – generic loader for any open-weights VLM hosted on Hugging Face.
+OpenHF - generic loader for any open-weights VLM hosted on Hugging Face.
 
 It works with either call pattern that `load_vlm` might use:
   • load_vlm("open-hf", model_id, run_dir)
