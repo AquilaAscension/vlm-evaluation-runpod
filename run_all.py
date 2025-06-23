@@ -43,17 +43,16 @@ def classify(arg: str):
         return dict(model_family="google",
                     model_id="gemini-2.5-flash",
                     model_dir="")
-    # open-weight HF
-    repo = arg.replace("https://huggingface.co/", "").rstrip("/")
-    safe_name = repo.replace("/", "_")
-    return dict(model_family="open-hf", model_id=safe_name, model_dir=repo)
-    # ----------------- new block -----------------
     m = re.fullmatch(r"(?:https?://huggingface.co/)?deepseek-ai/(janus[-_]pro[-_]7b)", arg, re.I)
     if m:
         repo = f"deepseek-ai/{m.group(1).replace('_','-')}"
         return dict(model_family="janus",
                     model_id=m.group(1),        # Janus-Pro-7B
                     model_dir=repo)
+    # open-weight HF
+    repo = arg.replace("https://huggingface.co/", "").rstrip("/")
+    safe_name = repo.replace("/", "_")
+    return dict(model_family="open-hf", model_id=safe_name, model_dir=repo)
 
 def run(cmd):
     print("\n$ " + " ".join(cmd), flush=True)
