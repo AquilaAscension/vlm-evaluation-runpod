@@ -216,6 +216,8 @@ class TextVQATaskRunner:
 
     def evaluate(self, vlm: VLM, device_batch_size: int, num_workers: int) -> None:
         """Initialize Dataloader & partition data across ranks, writing metrics to disk on termination."""
+        predictions_ocr:  List[str | None] = []
+        predictions_no_ocr: List[str | None] = []
         sampler = DistributedSampler(
             self.dataset,
             num_replicas=self.distributed_state.num_processes,
