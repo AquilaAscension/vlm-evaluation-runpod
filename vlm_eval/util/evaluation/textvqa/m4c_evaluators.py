@@ -210,8 +210,9 @@ class EvalAIAnswerProcessor:
 
     def __call__(self, item):
         if item is None:
-            return []
-        item = self.word_tokenize(item)
+            return ""
+        tokens = self.word_tokenize(item)  # this returns a list
+        item = " ".join(tokens)  # convert list to string BEFORE other processing
         item = item.replace("\n", " ").replace("\t", " ").strip()
         item = self.process_punctuation(item)
         item = self.process_digit_article(item)
