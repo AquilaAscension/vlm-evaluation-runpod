@@ -8,6 +8,24 @@ from PIL import Image
 from janus.models import MultiModalityCausalLM, VLChatProcessor   # Janus library
 from vlm_eval.util.interfaces import VLM                          # repo-wide base class
 
+from torchvision import transforms
+
+class _DummyProcessor:
+    """Mimic a HF image processor: returns dict(pixel_values=tensor[B,C,H,W])."""
+    def __init__(self):
+        self._tx = transforms.Compose([
+            transforms.Resize((224, 224), antialias=True),
+            transforms.ToTensor(),
+        ])
+
+    def __call__(self, images, return_tensors=None, **_):
+        if isinstance(images, list):
+            images = images[0]
+        if not isinstance(images, Image.Image):
+            images = Image.open(images).convert("RGB")
+        px = self._tx(images)
+        return {"pixel_values": px.unsqueeze(0)}
+
 
 class JanusVLM(VLM):
     """
@@ -40,7 +58,7 @@ class JanusVLM(VLM):
         )
 
         # Janus does its own image preprocessing inside VLChatProcessor
-        self.image_processor = None
+        self.image_processor = _DummyProcessor()
 
     # -------------------------------------------------------------------------
     def get_prompt_fn(self, dataset_family: str):
