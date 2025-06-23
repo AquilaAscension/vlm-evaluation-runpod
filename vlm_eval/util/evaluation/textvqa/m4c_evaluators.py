@@ -209,6 +209,8 @@ class EvalAIAnswerProcessor:
         return out_text
 
     def __call__(self, item):
+        if item is None:
+            return []
         item = self.word_tokenize(item)
         item = item.replace("\n", " ").replace("\t", " ").strip()
         item = self.process_punctuation(item)
