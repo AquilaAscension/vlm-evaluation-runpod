@@ -244,6 +244,11 @@ class TextVQATaskRunner:
                 gen_answers_ocr = vlm.generate_answer(pixel_values, qprompts_ocr)
                 gen_answers_no_ocr = vlm.generate_answer(pixel_values, qprompts_no_ocr)
 
+                if predictions_ocr is None:     # model ran WITHOUT OCR prompt
+                    predictions_ocr = [None] * len(predictions_no_ocr)
+                if predictions_no_ocr is None:  # model ran WITH OCR prompt
+                    predictions_no_ocr = [None] * len(predictions_ocr)
+                
                 for question_id, gen_answer_ocr, gen_answer_no_ocr, question, answer in zip(
                     question_ids, gen_answers_ocr, gen_answers_no_ocr, questions, answers, strict=True
                 ):
