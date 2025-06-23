@@ -229,6 +229,10 @@ class GQATaskRunner:
                     raise ValueError(f"Unexpected `pixel_values` type = {type(pixel_values)}")
 
                 gen_answers = vlm.generate_answer(pixel_values, question_prompts)
+
+                if gen_answers is None:
+                    gen_answers = [None] * len(question_prompts)
+                
                 for question_id, gen_answer, question, answer in zip(
                     question_ids, gen_answers, questions, answers, strict=True
                 ):
