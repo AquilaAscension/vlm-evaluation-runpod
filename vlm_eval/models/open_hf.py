@@ -8,7 +8,7 @@ It works with either call pattern that `load_vlm` might use:
 If only model_id is provided, we assume it *is* the HF repo path.
 """
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 import torch
 from PIL import Image
