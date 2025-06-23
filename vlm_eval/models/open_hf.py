@@ -51,13 +51,18 @@ def _safe_load_tokenizer(repo: str, **auth) -> Tuple[object, str]:
 
         spm_files = list(repo_cache.rglob("*.model"))
         if spm_files:
-            tok = LlamaTokenizerFast(
-                vocab_file=str(spm_files[0]),
-                bos_token="<s>",
-                eos_token="</s>",
-                unk_token="<unk>",
-            )
+            tok = LlamaTokenizerFast(vocab_file=str(spm_files[0]))
+            # Manually set any missing special tokens
+            if tok.unk_token is None:
+                tok.add_special_tokens({'unk_token': '<unk>'})
+            if tok.pad_token is None:
+                tok.add_special_tokens({'pad_token': '<pad>'})
+            if tok.bos_token is None:
+                tok.add_special_tokens({'bos_token': '<s>'})
+            if tok.eos_token is None:
+                tok.add_special_tokens({'eos_token': '</s>'})
             return tok, f"llama-spm:{spm_files[0].name}"
+
     except Exception as e:
         last_err = e
 
