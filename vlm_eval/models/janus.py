@@ -39,6 +39,7 @@ class JanusVLM(VLM):
         run_dir: Path | str,               # full HF repo-id, e.g. "deepseek-ai/Janus-Pro-7B"
         hf_token: Optional[str] = None,
         load_precision: str = "bf16",
+        ocr: bool = False, 
         **_,
     ):
         repo = str(run_dir)                # load everything from this HF repo
@@ -59,6 +60,8 @@ class JanusVLM(VLM):
 
         # Janus does its own image preprocessing inside VLChatProcessor
         self.image_processor = _DummyProcessor()
+
+        self.ocr: bool = bool(ocr)
 
     # -------------------------------------------------------------------------
     def get_prompt_fn(self, dataset_family: str):
