@@ -91,11 +91,8 @@ def test_evaluate_stub(tmp_path, monkeypatch):
     meta.write_text("{}")
 
     cfg = tmp_path / "c.yaml"
-    cfg.write_text(f"""\
-model_family: open-hf
-
-    cfg = tmp_path / "c.yaml"
-    cfg.write_text(f"""\
+    cfg.write_text(
+        f"""\
 model_family: open-hf
 model_id: mock
 model_dir: mock
@@ -103,7 +100,8 @@ dataset:
   type: text-vqa-slim
   root_dir: {tmp_path}
 results_dir: {tmp_path}
-""")
+"""
+    )
 
     monkeypatch.chdir(REPO_ROOT)
     import scripts.evaluate as ev

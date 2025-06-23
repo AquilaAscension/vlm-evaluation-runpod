@@ -5,9 +5,14 @@ Protocol/type definitions for the common parts of the VLM training & inference p
 (e.g., ImageProcessors) to complete vision-language models (VLMs).
 """
 from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence, Tuple, Union
+import types
 
-import torch
-import torch.nn as nn
+try:  # Optional dependency for type hints only
+    import torch
+    import torch.nn as nn
+except ModuleNotFoundError:  # pragma: no cover - allow lightweight test env
+    torch = types.SimpleNamespace(Tensor=object)
+    nn = types.SimpleNamespace(Module=object)
 from PIL.Image import Image
 from transformers.tokenization_utils import BatchEncoding
 
