@@ -216,8 +216,6 @@ class TextVQATaskRunner:
 
     def evaluate(self, vlm: VLM, device_batch_size: int, num_workers: int) -> None:
         """Initialize Dataloader & partition data across ranks, writing metrics to disk on termination."""
-        predictions_ocr:  List[str | None] = []
-        predictions_no_ocr: List[str | None] = []
         sampler = DistributedSampler(
             self.dataset,
             num_replicas=self.distributed_state.num_processes,
@@ -246,10 +244,10 @@ class TextVQATaskRunner:
                 gen_answers_ocr = vlm.generate_answer(pixel_values, qprompts_ocr)
                 gen_answers_no_ocr = vlm.generate_answer(pixel_values, qprompts_no_ocr)
 
-                if predictions_ocr is None:     # model ran WITHOUT OCR prompt
-                    predictions_ocr = [None] * len(predictions_no_ocr)
-                if predictions_no_ocr is None:  # model ran WITH OCR prompt
-                    predictions_no_ocr = [None] * len(predictions_ocr)
+                if gen_answers_ocr is None:     # model ran WITHOUT OCR prompt
+                    gen_answers_ocr = [None] * len(questions)
+                if gen_answers_no_ocr is None:  # model ran WITH OCR prompt
+                    gen_answers_no_ocr = [None] * len(questions)
                 
                 for question_id, gen_answer_ocr, gen_answer_no_ocr, question, answer in zip(
                     question_ids, gen_answers_ocr, gen_answers_no_ocr, questions, answers, strict=True
