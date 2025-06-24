@@ -1,137 +1,193 @@
+"""
+auto_tokenizer.py
+=================
+Given a HF repo-id, build the right `transformers` tokenizer *without*
+hard-coding per-model logic.
+
+Order of battle
+---------------
+1.  Read the repos README / model-card (<= 8 kB) and ask GPT-4o-mini for a
+    *minimal working Python snippet* that creates `tokenizer`.
+2.  If #1 fails, ask GPT-4o-mini (again) **just** about the file-listing
+    (“which files + which tokenizer class?”) and try that recipe.
+3.  If #2 fails, use pragmatic heuristics (tokenizer.json, *.model, …).
+
+The function exported to callers is:
+
+    build_intelligent_tokenizer(repo_id, token=None) → tokenizer
+"""
+
 from __future__ import annotations
 
-import json, os
+import importlib.util
+import json
+import os
+import runpy
+import tempfile
 from pathlib import Path
-from typing import Tuple, Dict, Any, List
+from typing import Dict, List
 
 from huggingface_hub import list_repo_files, snapshot_download
 from openai import OpenAI
 from transformers import (
-    AutoTokenizer, LlamaTokenizer, LlamaTokenizerFast
+    AutoTokenizer,
+    LlamaTokenizer,
+    LlamaTokenizerFast,
+    PreTrainedTokenizerFast,
 )
-import sentencepiece as spm
-import tempfile
 
+# --------------------------------------------------------------------------- #
+# OpenAI client (reads key from .keys.env/.env or real environment)           #
+# --------------------------------------------------------------------------- #
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 
-# --------------------------------------------------------------------------------------
-# 1) query OpenAI
-# --------------------------------------------------------------------------------------
-_SYSTEM_PROMPT = """You are an expert in Hugging-Face model repositories.
-Given the file names inside a repo, decide which TRANSFORMERS tokenizer
-class should load it and what files are needed.
-Respond strictly as valid JSON with keys:
-{
-  "tokenizer_class": "<AutoTokenizer|LlamaTokenizer|LlamaTokenizerFast|SentencePiece>",
-  "tokenizer_files": ["file1", "file2", ...],   // relative paths in the repo
-  "special": "<short human hint>"
-}"""
+# --------------------------------------------------------------------------- #
+# 1. Ask GPT to read README / model-card and spit out a code snippet          #
+# --------------------------------------------------------------------------- #
+_README_SYSTEM = (
+    "You are an expert in Hugging-Face repos.\n"
+    "Given this README, reply ONLY with JSON:\n"
+    '{ "code": "<python that defines `tokenizer`>" }'
+)
 
 
-def _ask_openai(repo_id: str, file_list: List[str]) -> Dict[str, Any]:
-    prompt = f"Repo: {repo_id}\nFiles:\n" + "\n".join(file_list)
+def _try_readme_snippet(repo_id: str, files: List[str], **hf_auth):
+    readme_file = next((f for f in files if "readme" in f.lower()), None)
+    if not readme_file:
+        return None
+
+    # Download just the README so we stay fast/cheap
+    local_dir = snapshot_download(
+        repo_id, allow_patterns=[readme_file], **hf_auth, local_dir=tempfile.mkdtemp()
+    )
+    readme_path = Path(local_dir) / readme_file
+    text = readme_path.read_text(encoding="utf-8")[:8000]  # truncate
+
     chat = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "system", "content": _README_SYSTEM},
+        {"role": "user", "content": text},
+    ]
+    try:
+        rsp = client.chat.completions.create(
+            model="gpt-4o-mini", messages=chat, temperature=0
+        )
+        code = json.loads(rsp.choices[0].message.content)["code"]
+
+        # Write to temp       → import     → grab `tokenizer`
+        f = tempfile.NamedTemporaryFile("w+", suffix=".py", delete=False)
+        f.write(code + "\n__tok__ = tokenizer\n")
+        f.close()
+
+        spec = importlib.util.spec_from_file_location("tokmod", f.name)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)  # type: ignore
+        tok = mod.__tok__
+        tok._meta = {"strategy": "README+GPT"}
+        return tok
+    except Exception as e:
+        print(f"[auto_tokenizer] README path failed → {e}")
+        return None
+
+
+# --------------------------------------------------------------------------- #
+# 2. Ask GPT to choose tokenizer class + files from file-listing              #
+# --------------------------------------------------------------------------- #
+_FILES_SYSTEM = (
+    "You are an expert in HF model repos.\n"
+    "Given a file list, reply ONLY with valid JSON:\n"
+    "{"
+    '  "tokenizer_class": "AutoTokenizer|LlamaTokenizer|LlamaTokenizerFast|SentencePiece",'
+    '  "tokenizer_files": ["file1", "file2"]'
+    "}"
+)
+
+
+def _ask_gpt_recipe(repo_id: str, files: List[str]):
+    prompt = f"Repo: {repo_id}\nFiles:\n" + "\n".join(files)
+    chat = [
+        {"role": "system", "content": _FILES_SYSTEM},
         {"role": "user", "content": prompt},
     ]
-    resp = client.chat.completions.create(model="gpt-4o-mini", messages=chat, temperature=0)
-    return json.loads(resp.choices[0].message.content)
+    rsp = client.chat.completions.create(
+        model="gpt-4o-mini", messages=chat, temperature=0
+    )
+    return json.loads(rsp.choices[0].message.content)
 
 
-# ---------------------------------------------------------------------
-# 2) Build tokenizer from the recipe (final version)
-# ---------------------------------------------------------------------
-from transformers import PreTrainedTokenizerFast
+def _build_from_recipe(repo_id: str, recipe: Dict, **hf_auth):
+    klass = recipe["tokenizer_class"]
+    needed = recipe["tokenizer_files"]
+    local = Path(
+        snapshot_download(repo_id, allow_patterns=needed, **hf_auth, local_dir=tempfile.mkdtemp())
+    )
 
-def _build_from_recipe(repo_id: str, recipe: dict, **hf_auth):
-    klass  = recipe["tokenizer_class"]
-    files  = recipe["tokenizer_files"]
-    local  = snapshot_download(repo_id, allow_patterns=files, **hf_auth)
-    local  = Path(local)
+    if klass == "AutoTokenizer":
+        tok = AutoTokenizer.from_pretrained(local, trust_remote_code=True, legacy=True)
+    elif klass == "LlamaTokenizerFast":
+        tok = LlamaTokenizerFast(vocab_file=str(local / needed[0]))
+    elif klass == "LlamaTokenizer":
+        tok = LlamaTokenizer(vocab_file=str(local / needed[0]))
+    elif klass == "SentencePiece":
+        spm_path = local / needed[0]
+        tok = LlamaTokenizerFast(vocab_file=str(spm_path))
+    else:
+        raise ValueError(f"GPT suggested unknown class {klass}")
 
-    json_vocab = [f for f in files if f.lower().endswith(".json")]
-    if len(json_vocab) == 1:
-        vocab_path = Path(local) / json_vocab[0]
-        tok = PreTrainedTokenizerFast(
-            tokenizer_file=str(vocab_path),
+    tok._meta = {"strategy": f"GPT:{klass}"}
+    return tok
+
+
+# --------------------------------------------------------------------------- #
+# 3. Heuristics (tokenizer.json, *.model)                                     #
+# --------------------------------------------------------------------------- #
+def _heuristic_tokenizer(local_dir: Path):
+    # tokenizer.json
+    json_tok = next(local_dir.rglob("tokenizer.json"), None)
+    if json_tok:
+        tok = PreTrainedTokenizerFast(tokenizer_file=str(json_tok))
+        tok._meta = {"strategy": "heuristic:tokenizer.json"}
+        return tok
+
+    # *.model
+    spm_tok = next(local_dir.rglob("*.model"), None)
+    if spm_tok:
+        tok = LlamaTokenizerFast(
+            vocab_file=str(spm_tok),
             bos_token="<s>",
             eos_token="</s>",
             unk_token="<unk>",
         )
-        tok._meta = {"strategy": f"json-vocab:{json_vocab[0]}"}
-        return tok, tok._meta["strategy"]
+        tok._meta = {"strategy": f"heuristic:{spm_tok.name}"}
+        return tok
 
-    # ---------- normal AutoTokenizer route ----------
-    if klass == "AutoTokenizer":
-        try:
-            tok = AutoTokenizer.from_pretrained(local, trust_remote_code=True,
-                                                legacy=True, **hf_auth)
-            tok._meta = {"strategy": "auto"}
-            return tok, "auto"
-        except Exception:
-            pass                                    # fall through
-
-    # ---------- fallback #1 : tokenizer.json ----------
-    json_file = next(local.rglob("tokenizer.json"), None)
-    if json_file is not None:
-        tok = PreTrainedTokenizerFast(tokenizer_file=str(json_file))
-        tok._meta = {"strategy": f"tokenizer.json:{json_file.name}"}
-        return tok, tok._meta["strategy"]
-
-    # ---------- fallback #2 : SentencePiece ----------
-    spm_file = next(local.rglob("*.model"), None)
-    if spm_file is not None:
-        tok = LlamaTokenizerFast(vocab_file=str(spm_file),
-                                 bos_token="<s>", eos_token="</s>", unk_token="<unk>")
-        tok._meta = {"strategy": f"spm:{spm_file.name}"}
-        return tok, tok._meta["strategy"]
-    
-    # ❶ Append at END of _build_from_recipe(), just before the final `raise`
-    # ------------------------------------------------------
-    # last-chance: ask GPT to parse README for a tokenizer snippet
-    readme_files = [f for f in files if "readme" in f.lower()]
-    if readme_files:
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
-        readme_path = Path(local) / readme_files[0]
-        with open(readme_path) as fh:
-            readme_txt = fh.read()[:8000]        # 8 k tokens max to stay cheap
-        chat = [
-            {"role": "system",
-            "content": "You're an expert at Hugging-Face repos. "
-                        "Given this README, tell me the exact Python code snippet "
-                        "needed to create the tokenizer, in JSON:\n"
-                        "{ \"code\": \"import ...\" }"},
-            {"role": "user", "content": readme_txt},
-        ]
-        rsp = client.chat.completions.create(
-            model="gpt-4o-mini", messages=chat, temperature=0)
-        try:
-            code = json.loads(rsp.choices[0].message.content)["code"]
-            # ⚠️ eval-free exec: write snippet to a temp file and import it
-            temp = tempfile.NamedTemporaryFile("w+", suffix=".py", delete=False)
-            temp.write(code + "\n__tok__ = tokenizer")  # user must name var 'tokenizer'
-            temp.close()
-            import importlib.util, runpy
-            spec = importlib.util.spec_from_file_location("tokmod", temp.name)
-            tokmod = importlib.util.module_from_spec(spec); spec.loader.exec_module(tokmod)
-            tok = tokmod.__tok__
-            tok._meta = {"strategy": "README+GPT"}
-            return tok, "README+GPT"
-        except Exception as e:
-            print("[OpenHF] README-GPT fallback failed →", e)
-    # ------------------------------------------------------
+    return None
 
 
-    # ---------- give up ----------
-    raise RuntimeError(f"No usable tokenizer assets found in {repo_id}")
-
-
-# --------------------------------------------------------------------------------------
-# 3) Public entry point
-# --------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------- #
+# 4. Public entry point                                                      #
+# --------------------------------------------------------------------------- #
 def build_intelligent_tokenizer(repo_id: str, *, token: str | None = None):
     hf_auth = {"token": token} if token else {}
+
     files = list_repo_files(repo_id, **hf_auth)
-    recipe = _ask_openai(repo_id, files)
-    tok, strategy = _build_from_recipe(repo_id, recipe, **hf_auth)
-    return tok
+
+    # 1️⃣ README route
+    tok = _try_readme_snippet(repo_id, files, **hf_auth)
+    if tok:
+        return tok
+
+    # 2️⃣ GPT file-list route
+    try:
+        recipe = _ask_gpt_recipe(repo_id, files)
+        tok = _build_from_recipe(repo_id, recipe, **hf_auth)
+        return tok
+    except Exception as e:
+        print(f"[auto_tokenizer] GPT recipe path failed → {e}")
+
+    # 3️⃣ Heuristic route
+    local_all = Path(snapshot_download(repo_id, **hf_auth, local_dir=tempfile.mkdtemp()))
+    tok = _heuristic_tokenizer(local_all)
+    if tok:
+        return tok
+
+    raise RuntimeError(f"[auto_tokenizer] Could not build tokenizer for {repo_id}")
