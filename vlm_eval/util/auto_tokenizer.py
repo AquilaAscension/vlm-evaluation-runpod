@@ -17,6 +17,7 @@ The function exported to callers is:
     build_intelligent_tokenizer(repo_id, token=None) → tokenizer
 """
 
+
 from __future__ import annotations
 
 import importlib.util
@@ -40,7 +41,6 @@ from transformers import (
 # OpenAI client (reads key from .keys.env/.env or real environment)           #
 # --------------------------------------------------------------------------- #
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
-
 # --------------------------------------------------------------------------- #
 # 1. Ask GPT to read README / model-card and spit out a code snippet          #
 # --------------------------------------------------------------------------- #
@@ -49,6 +49,13 @@ _README_SYSTEM = (
     "Given this README, reply ONLY with JSON:\n"
     '{ "code": "<python that defines `tokenizer`>" }'
 )
+# ---------------------------------------------------------------------------
+# Hard-coded “known exceptions” where a model re-uses another repo’s tokenizer
+# ---------------------------------------------------------------------------
+_OVERRIDES = {
+    "mistralai/Pixtral-12B-2409": "mistralai/Mistral-7B-v0.1",
+    # you can add more one-offs here if other models do the same
+}
 
 
 def _try_readme_snippet(repo_id: str, files: List[str], **hf_auth):
@@ -214,6 +221,15 @@ def build_intelligent_tokenizer(repo_id: str, *, token: str | None = None):
     local_tmp = Path(snapshot_download(repo_id, allow_patterns=["README*"], **hf_auth,
                                        local_dir=tempfile.mkdtemp()))
     readme = next(local_tmp.rglob("*README*"), None)
+
+    # --- 0️⃣ explicit override ------------------------------------------------
+    if repo_id in _OVERRIDES:
+        target = _OVERRIDES[repo_id]
+        print(f"[auto_tokenizer] hard-coded override → {target}")
+        tok = AutoTokenizer.from_pretrained(target, trust_remote_code=True, **hf_auth)
+        tok._meta = {"strategy": f"override:{target}"}
+        return tok
+
 
     # ➊ external-tokenizer shortcut
     if readme:
