@@ -180,7 +180,6 @@ _PATTERNS = [
 ]
 
 
-
 def _external_repo_in_readme(readme_path: Path) -> str | None:
     """
     Scan up to the first ~4 kB of the README for any of the patterns above.
@@ -212,6 +211,12 @@ def build_intelligent_tokenizer(repo_id: str, *, token: str | None = None):
     # ➊ external-tokenizer shortcut
     if readme:
         ext_repo = _external_repo_in_readme(readme)
+
+        if ext_repo and "/" not in repo:              # no org given → inherit from src repo
+            org = repo_id.split("/")[0]
+            ext_repo = f"{org}/{ext_repo}"
+
+
         if ext_repo:
             print(f"[auto_tokenizer] README points to external tokenizer → {ext_repo}")
             tok = AutoTokenizer.from_pretrained(ext_repo, trust_remote_code=True, **hf_auth)
