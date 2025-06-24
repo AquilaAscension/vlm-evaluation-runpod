@@ -165,19 +165,20 @@ def _heuristic_tokenizer(local_dir: Path):
 import re, textwrap
 
 _PATTERNS = [
-    # explicit AutoTokenizer call
+    # explicit AutoTokenizer call with or without org prefix
     re.compile(
-        r"AutoTokenizer\.from_pretrained\(\s*[\"']([^\"']+/[^\"']+)[\"']",
+        r"AutoTokenizer\.from_pretrained\(\s*[\"']([\w\-.]+\/)?([\w\-.]+?7b[^\s\"']*)[\"']",
         re.I,
     ),
-    # direct mention of another repo – e.g.  mistralai/Mistral-7B-v0.1
-    re.compile(r"([\w\-.]+\/mistral[^\s\"'()]+7b[^\s\"'()]+)", re.I),
-    # generic “tokenizer = '<org>/<name>'”
+    # direct bare mention … e.g.  “Mistral-7B-v0.1” or “Mixtral-8x7B-Instruct”
+    re.compile(r"\b([\w\-.]*7b[^\s\"'()]+)", re.I),
+    # generic “tokenizer: '<name>'” lines
     re.compile(
-        r"tokenizer\s*[:=]\s*[\"']([\w\-.]+\/[\w\-.]+)[\"']",
+        r"tokenizer\s*[:=]\s*[\"']([\w\-.]+\/)?([\w\-.]+)[\"']",
         re.I,
     ),
 ]
+
 
 
 def _external_repo_in_readme(readme_path: Path) -> str | None:
