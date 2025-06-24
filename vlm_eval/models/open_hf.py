@@ -29,7 +29,7 @@ class OpenHF:
         #  figure out which repo path to load
         # ------------------------------------------------------------------ #
         repo = model_dir or model_id          # if model_dir == "", fall back to model_id
-        auth = {"token": hf_token} if hf_token else {}
+        hf_auth = {"token": hf_token} if hf_token else {}
 
         # ------------------------------------------------------------------ #
         #  🔑 robust tokenizer loading
@@ -41,19 +41,25 @@ class OpenHF:
         # ------------------------------------------------------------------ #
         #  processor & model
         # ------------------------------------------------------------------ #
-        self.processor = AutoProcessor.from_pretrained(
-            repo,
-            trust_remote_code=True,
-            resume_download=True,
-            **auth,
-        )
+
+        try:
+            self.processor = AutoProcessor.from_pretrained(
+                repo,
+                trust_remote_code=True,
+                resume_download=True,
+                **hf_auth,
+            )
+        except Exception as e:
+            print(f"[OpenHF] No processor found → {e}")
+            self.processor = None  # or just use tokenizer directly
+
 
         self.model = AutoModel.from_pretrained(
             repo,
             torch_dtype=torch.float16,
             device_map="auto",
             trust_remote_code=True,
-            **auth,
+            **hf_auth,
         )
 
     # ====================================================================== #
