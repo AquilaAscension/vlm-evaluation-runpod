@@ -17,7 +17,7 @@ from typing import Tuple, Dict, Any, List
 
 import openai, transformers, sentencepiece as spm
 from huggingface_hub import list_repo_files, snapshot_download
-from transformers import AutoTokenizer, LlamaTokenizer, LlamaTokenizerFastopenai.api_key = os.getenv("OPENAI_API_KEY", "")
+from transformers import AutoTokenizer, LlamaTokenizer, LlamaTokenizerFast
 
 openai.api_key = os.getenv("OPENAI_API_KEY", "")
 
