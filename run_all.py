@@ -1,107 +1,64 @@
-#!/usr/bin/env python3
-"""
-Evaluate one model on TextVQA-Slim, VQA-v2-Slim, and GQA
+# run_all.py  (overwrite or patch in-place)
+import argparse, json, os, random, subprocess, sys, time
+from pathlib import Path
+from datetime import datetime
+import torch
 
-Usage:
-  # open-weight HF repo (string or URL)
-  python run_all.py mistralai/Pixtral-12B
-  python run_all.py https://huggingface.co/deepseek-ai/janus-pro-7b
+SEED = 42          # global reproducibility knob
+random.seed(SEED); torch.manual_seed(SEED)
 
-  # closed-API shortcuts (keys must be in .keys.env or environment)
-  python run_all.py claude          # Claude 4 Sonnet
-  python run_all.py gemini          # Gemini 2.5 Flash
-"""
+DATASETS = ["text-vqa-slim", "vqav2-slim", "gqa-slim"]
+EVAL_CMD = ["python", "scripts/evaluate.py"]
+SCORE_CMD = ["python", "scripts/score.py"]
 
-import argparse, os, pathlib, re, subprocess, sys, tempfile
+def mark_done(model, ds, tag):
+    Path(f"~/prismatic-vlms/results/{model}/{ds}/{tag}.done"
+         .replace("~", os.path.expanduser("~"))).touch()
 
-# ---------------- ensure repo root on sys.path ----------------
-REPO_ROOT = pathlib.Path(__file__).resolve().parent
-sys.path.insert(0, str(REPO_ROOT))
+def already_done(model, ds, tag):
+    return Path(f"~/prismatic-vlms/results/{model}/{ds}/{tag}.done"
+                .replace("~", os.path.expanduser("~"))).exists()
 
-# ---- load keys (works whether in utils/ or repo root) -------
-try:
-    from vlm_eval.util.load_keys import load_keys
-except ModuleNotFoundError:
-    from load_keys import load_keys  # fallback for old placement
-load_keys()
+def main(repo_id_list):
+    for repo in repo_id_list:
+        model_name = repo.split("/")[-1]
+        print(f"\n▶ {model_name}  —  {datetime.now().isoformat(timespec='seconds')}")
+        # 1-shot model download so the GPU never waits
+        snapshot_path = download_once(repo)
 
-# ---------------- constants ----------------------------------
-DATASETS = ["text-vqa-slim", "vqa-v2-slim", "gqa-slim"]
-RESULTS_DIR = os.environ.get("RESULTS_DIR", "/home/ubuntu/prismatic-vlms/results")
-ROOT_DATA = os.environ.get("ROOT_DATA", "/home/ubuntu/datasets/vlm-evaluation")
+        for ds in DATASETS:
+            # deterministic resume: skip if both passes finished
+            if already_done(model_name, ds, "_scored"):
+                print(f"✓ {model_name}/{ds} already scored")
+                continue
 
-# ---------------- helper funcs -------------------------------
-def classify(arg: str):
-    """Return dict with model_family, model_id, model_dir fields."""
-    arg = arg.strip()
-    # closed APIs
-    if re.fullmatch(r"claude(-sonnet4|-4-sonnet)?", arg, re.I):
-        return dict(model_family="anthropic",
-                    model_id="claude-4-sonnet-20250522",
-                    model_dir="")
-    if re.fullmatch(r"gemini(?:-?2\.5)?(?:-flash)?", arg, re.I):
-        return dict(model_family="google",
-                    model_id="gemini-2.5-flash",
-                    model_dir="")
-    m = re.fullmatch(r"(?:https?://huggingface.co/)?deepseek-ai/(janus[-_]pro[-_]7b)", arg, re.I)
-    if m:
-        repo = f"deepseek-ai/{m.group(1).replace('_','-')}"
-        return dict(model_family="janus",
-                    model_id=m.group(1),        # Janus-Pro-7B
-                    model_dir=repo)
-    # open-weight HF
-    repo = arg.replace("https://huggingface.co/", "").rstrip("/")
-    safe_name = repo.replace("/", "_")
-    return dict(model_family="open-hf", model_id=safe_name, model_dir=repo)
+            # EVALUATE -------------------------------------------------------
+            if not already_done(model_name, ds, "_eval"):
+                run(EVAL_CMD + ["--model", repo, "--dataset", ds,
+                                "--local_model_path", snapshot_path])
+                mark_done(model_name, ds, "_eval")
+
+            # SCORE ----------------------------------------------------------
+            if not already_done(model_name, ds, "_scored"):
+                run(SCORE_CMD + ["--model", model_name, "--dataset", ds])
+                mark_done(model_name, ds, "_scored")
+
+def download_once(repo):
+    """Sync repo to HF cache once, regardless of earlier runs."""
+    from huggingface_hub import snapshot_download
+    cache_dir = os.environ.get("HF_HOME", "~/.cache/huggingface")
+    dest = snapshot_download(repo_id=repo, cache_dir=cache_dir,
+                             resume_download=True, local_files_only=False)
+    return dest
 
 def run(cmd):
-    print("\n$ " + " ".join(cmd), flush=True)
-    subprocess.run(cmd, check=True)
-
-# ---------------- main ---------------------------------------
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("model", help="HF repo/URL or closed-API keyword (claude, gemini)")
-    args = ap.parse_args()
-
-    cfg = classify(args.model)
-    print(f"→ Using loader {cfg['model_family']}   model_id={cfg['model_id']}")
-
-    for dset in DATASETS:
-        # build flat YAML expected by Draccus
-        yaml_str = f"""\
-model_family: {cfg['model_family']}
-model_id: {cfg['model_id']}
-model_dir: {cfg['model_dir']}
-run_dir: {cfg['model_dir']}
-
-dataset:
-  type: {dset}
-  root_dir: {ROOT_DATA}
-
-results_dir: {RESULTS_DIR}
-"""
-        with tempfile.NamedTemporaryFile("w+", delete=False, suffix=".yaml") as tmp:
-            tmp.write(yaml_str)
-            cfg_path = tmp.name
-
-        # evaluate + score
-        run(["python", "scripts/evaluate.py", "--config_path", cfg_path])
-        run([
-            "python", "scripts/score.py",
-            "--model_id", cfg["model_id"],
-            "--dataset.type", dset,
-            "--dataset.root_dir", ROOT_DATA,
-            "--results_dir", RESULTS_DIR,
-        ])
-
-        print(f"✓ finished {cfg['model_id']} on {dset}\n"
-              f"  results → {RESULTS_DIR}/{cfg['model_id']}/{dset}_scores.json",
-              flush=True)
-
-        os.unlink(cfg_path)
+    print("  $", *cmd)
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        print("‼ subprocess failed:", e); sys.exit(1)
 
 if __name__ == "__main__":
-    if not (REPO_ROOT / "scripts" / "evaluate.py").exists():
-        sys.exit("Run this script from the repo root (where scripts/ lives).")
-    main()
+    p = argparse.ArgumentParser()
+    p.add_argument("models", nargs="+", help="HF repos, one or many")
+    main(p.parse_args().models)

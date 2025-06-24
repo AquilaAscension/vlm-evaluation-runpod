@@ -9,9 +9,7 @@ import torch
 from PIL import Image
 from transformers import AutoModel, AutoProcessor
 
-# <-- our new smart helper
-from vlm_eval.util.auto_tokenizer import build_intelligent_tokenizer
-
+from vlm_eval.util.resolve_tokenizer import resolve_tokenizer
 
 class OpenHF:
     """
@@ -34,7 +32,9 @@ class OpenHF:
         # ------------------------------------------------------------------ #
         #  🔑 robust tokenizer loading
         # ------------------------------------------------------------------ #
-        self.tokenizer = build_intelligent_tokenizer(repo, token=hf_token)
+        self.tokenizer = resolve_tokenizer(repo,
+                                   trust_remote_code=True,
+                                   use_fast=True)
         strategy = getattr(self.tokenizer, "_meta", {}).get("strategy", "auto")
         print(f"[OpenHF] tokenizer loaded via «{strategy}»")
 
