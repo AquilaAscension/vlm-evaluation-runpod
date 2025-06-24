@@ -162,12 +162,36 @@ def _heuristic_tokenizer(local_dir: Path):
 
     return None
 
+import re
+_TOKENIZER_RE = re.compile(
+    r'from_pretrained\(\s*["\']([\w\-_]+\/[\w\-.]+)["\']\s*\)', re.IGNORECASE
+)
+
+
+def _external_repo_in_readme(readme_path: Path) -> str | None:
+    text = readme_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    snippet = "\n".join(text[:1000])  # keep it quick
+    m = _TOKENIZER_RE.search(snippet)
+    return m.group(1) if m else None
 
 # --------------------------------------------------------------------------- #
 # 4. Public entry point                                                      #
 # --------------------------------------------------------------------------- #
 def build_intelligent_tokenizer(repo_id: str, *, token: str | None = None):
     hf_auth = {"token": token} if token else {}
+
+    local_tmp = Path(snapshot_download(repo_id, allow_patterns=["README*"], **hf_auth,
+                                       local_dir=tempfile.mkdtemp()))
+    readme = next(local_tmp.rglob("*README*"), None)
+
+    # ➊ external-tokenizer shortcut
+    if readme:
+        ext_repo = _external_repo_in_readme(readme)
+        if ext_repo:
+            print(f"[auto_tokenizer] README points to external tokenizer → {ext_repo}")
+            tok = AutoTokenizer.from_pretrained(ext_repo, trust_remote_code=True, **hf_auth)
+            tok._meta = {"strategy": f"external:{ext_repo}"}
+            return tok
 
     files = list_repo_files(repo_id, **hf_auth)
 
