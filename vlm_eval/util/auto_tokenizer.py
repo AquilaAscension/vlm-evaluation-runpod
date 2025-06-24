@@ -38,45 +38,43 @@ def _ask_openai(repo_id: str, file_list: List[str]) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------
-# 2) Build a tokenizer from the OpenAI “recipe”
+# 2) Build tokenizer from the recipe (final version)
 # ---------------------------------------------------------------------
-def _build_from_recipe(repo_id: str, recipe: dict, **hf_auth):
-    """
-    Returns
-    -------
-    tok       : the built tokenizer
-    strategy  : short string for logging
-    """
-    klass   = recipe["tokenizer_class"]          # e.g. "AutoTokenizer"
-    needed  = recipe["tokenizer_files"]          # list of file names
-    local   = snapshot_download(repo_id,
-                                allow_patterns=needed,
-                                **hf_auth)
+from transformers import PreTrainedTokenizerFast
 
-    # ---------- 1. try the normal AutoTokenizer route -----------------
+def _build_from_recipe(repo_id: str, recipe: dict, **hf_auth):
+    klass  = recipe["tokenizer_class"]
+    files  = recipe["tokenizer_files"]
+    local  = snapshot_download(repo_id, allow_patterns=files, **hf_auth)
+    local  = Path(local)
+
+    # ---------- normal AutoTokenizer route ----------
     if klass == "AutoTokenizer":
         try:
-            tok = AutoTokenizer.from_pretrained(
-                    local,
-                    trust_remote_code=True,
-                    legacy=True,          # allow older tokenizers
-                    **hf_auth)
+            tok = AutoTokenizer.from_pretrained(local, trust_remote_code=True,
+                                                legacy=True, **hf_auth)
             tok._meta = {"strategy": "auto"}
             return tok, "auto"
-        except Exception:                 # <-- anything goes wrong → fall through
-            pass                          # we’ll attempt a manual SPM build
+        except Exception:
+            pass                                    # fall through
 
-    # ---------- 2. manual SentencePiece fallback ----------------------
-    spm_file = next(Path(local).rglob("*.model"), None)
-    if spm_file is None:
-        raise RuntimeError(f"No *.model file found in {repo_id} - cannot build tokenizer")
+    # ---------- fallback #1 : tokenizer.json ----------
+    json_file = next(local.rglob("tokenizer.json"), None)
+    if json_file is not None:
+        tok = PreTrainedTokenizerFast(tokenizer_file=str(json_file))
+        tok._meta = {"strategy": f"tokenizer.json:{json_file.name}"}
+        return tok, tok._meta["strategy"]
 
-    tok = LlamaTokenizerFast(vocab_file=str(spm_file),
-                             bos_token="<s>",
-                             eos_token="</s>",
-                             unk_token="<unk>")
-    tok._meta = {"strategy": f"spm-direct:{spm_file.name}"}
-    return tok, tok._meta["strategy"]
+    # ---------- fallback #2 : SentencePiece ----------
+    spm_file = next(local.rglob("*.model"), None)
+    if spm_file is not None:
+        tok = LlamaTokenizerFast(vocab_file=str(spm_file),
+                                 bos_token="<s>", eos_token="</s>", unk_token="<unk>")
+        tok._meta = {"strategy": f"spm:{spm_file.name}"}
+        return tok, tok._meta["strategy"]
+
+    # ---------- give up ----------
+    raise RuntimeError(f"No usable tokenizer assets found in {repo_id}")
 
 
 # --------------------------------------------------------------------------------------
