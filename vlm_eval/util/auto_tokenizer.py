@@ -1,25 +1,17 @@
-"""
-auto_tokenizer.py
------------------
-Given a HF repo id, ask OpenAI to decide which tokenizer class/files to use,
-then build and return the tokenizer object.
-
-Usage:
-    from vlm_eval.util.auto_tokenizer import build_intelligent_tokenizer
-    tok     = build_intelligent_tokenizer("mistralai/Pixtral-12B-2409", token=hf_token)
-    strategy= tok._meta["strategy"]   # friendly string for logs
-"""
-
 from __future__ import annotations
-import json, os, tempfile
+
+import json, os
 from pathlib import Path
 from typing import Tuple, Dict, Any, List
 
-import openai, transformers, sentencepiece as spm
 from huggingface_hub import list_repo_files, snapshot_download
-from transformers import AutoTokenizer, LlamaTokenizer, LlamaTokenizerFast
+from openai import OpenAI
+from transformers import (
+    AutoTokenizer, LlamaTokenizer, LlamaTokenizerFast
+)
+import sentencepiece as spm
 
-openai.api_key = os.getenv("OPENAI_API_KEY", "")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 
 # --------------------------------------------------------------------------------------
 # 1) query OpenAI
@@ -41,7 +33,7 @@ def _ask_openai(repo_id: str, file_list: List[str]) -> Dict[str, Any]:
         {"role": "system", "content": _SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
     ]
-    resp = openai.ChatCompletion.create(model="gpt-4o-mini", messages=chat, temperature=0)
+    resp = client.chat.completions.create(model="gpt-4o-mini", messages=chat, temperature=0)
     return json.loads(resp.choices[0].message.content)
 
 
