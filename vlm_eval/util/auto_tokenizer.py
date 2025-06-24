@@ -10,6 +10,7 @@ from transformers import (
     AutoTokenizer, LlamaTokenizer, LlamaTokenizerFast
 )
 import sentencepiece as spm
+import tempfile
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 
@@ -84,6 +85,42 @@ def _build_from_recipe(repo_id: str, recipe: dict, **hf_auth):
                                  bos_token="<s>", eos_token="</s>", unk_token="<unk>")
         tok._meta = {"strategy": f"spm:{spm_file.name}"}
         return tok, tok._meta["strategy"]
+    
+    # ❶ Append at END of _build_from_recipe(), just before the final `raise`
+    # ------------------------------------------------------
+    # last-chance: ask GPT to parse README for a tokenizer snippet
+    readme_files = [f for f in files if "readme" in f.lower()]
+    if readme_files:
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
+        readme_path = Path(local) / readme_files[0]
+        with open(readme_path) as fh:
+            readme_txt = fh.read()[:8000]        # 8 k tokens max to stay cheap
+        chat = [
+            {"role": "system",
+            "content": "You're an expert at Hugging-Face repos. "
+                        "Given this README, tell me the exact Python code snippet "
+                        "needed to create the tokenizer, in JSON:\n"
+                        "{ \"code\": \"import ...\" }"},
+            {"role": "user", "content": readme_txt},
+        ]
+        rsp = client.chat.completions.create(
+            model="gpt-4o-mini", messages=chat, temperature=0)
+        try:
+            code = json.loads(rsp.choices[0].message.content)["code"]
+            # ⚠️ eval-free exec: write snippet to a temp file and import it
+            temp = tempfile.NamedTemporaryFile("w+", suffix=".py", delete=False)
+            temp.write(code + "\n__tok__ = tokenizer")  # user must name var 'tokenizer'
+            temp.close()
+            import importlib.util, runpy
+            spec = importlib.util.spec_from_file_location("tokmod", temp.name)
+            tokmod = importlib.util.module_from_spec(spec); spec.loader.exec_module(tokmod)
+            tok = tokmod.__tok__
+            tok._meta = {"strategy": "README+GPT"}
+            return tok, "README+GPT"
+        except Exception as e:
+            print("[OpenHF] README-GPT fallback failed →", e)
+    # ------------------------------------------------------
+
 
     # ---------- give up ----------
     raise RuntimeError(f"No usable tokenizer assets found in {repo_id}")

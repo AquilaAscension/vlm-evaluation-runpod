@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-run_all.py  –  Evaluate one model on TextVQA-Slim, VQA-v2-Slim, and GQA
+Evaluate one model on TextVQA-Slim, VQA-v2-Slim, and GQA
 
 Usage:
   # open-weight HF repo (string or URL)
