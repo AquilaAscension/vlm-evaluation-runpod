@@ -48,6 +48,18 @@ def _build_from_recipe(repo_id: str, recipe: dict, **hf_auth):
     local  = snapshot_download(repo_id, allow_patterns=files, **hf_auth)
     local  = Path(local)
 
+    json_vocab = [f for f in files if f.lower().endswith(".json")]
+    if len(json_vocab) == 1:
+        vocab_path = Path(local) / json_vocab[0]
+        tok = PreTrainedTokenizerFast(
+            tokenizer_file=str(vocab_path),
+            bos_token="<s>",
+            eos_token="</s>",
+            unk_token="<unk>",
+        )
+        tok._meta = {"strategy": f"json-vocab:{json_vocab[0]}"}
+        return tok, tok._meta["strategy"]
+
     # ---------- normal AutoTokenizer route ----------
     if klass == "AutoTokenizer":
         try:
