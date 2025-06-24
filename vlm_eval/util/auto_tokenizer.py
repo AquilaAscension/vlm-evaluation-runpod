@@ -202,6 +202,13 @@ def _external_repo_in_readme(readme_path: Path) -> str | None:
 # 4. Public entry point                                                      #
 # --------------------------------------------------------------------------- #
 def build_intelligent_tokenizer(repo_id: str, *, token: str | None = None):
+    if repo_id.lower().startswith("mistralai/pixtral"):
+        base_tok = "mistralai/Mistral-7B-v0.2"
+        print(f"[auto_tokenizer] Pixtral detected → using tokenizer from {base_tok}")
+        return AutoTokenizer.from_pretrained(base_tok,
+                                             trust_remote_code=True,
+                                             token=token)
+    
     hf_auth = {"token": token} if token else {}
 
     local_tmp = Path(snapshot_download(repo_id, allow_patterns=["README*"], **hf_auth,
