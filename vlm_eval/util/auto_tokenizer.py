@@ -1,30 +1,11 @@
 """
 auto_tokenizer.py
 =================
-Given a HF repo-id, build the right `transformers` tokenizer *without*
-hard-coding per-model logic.
-
-Order of battle
----------------
-1.  Read the repos README / model-card (<= 8 kB) and ask GPT-4o-mini for a
-    *minimal working Python snippet* that creates `tokenizer`.
-2.  If #1 fails, ask GPT-4o-mini (again) **just** about the file-listing
-    (“which files + which tokenizer class?”) and try that recipe.
-3.  If #2 fails, use pragmatic heuristics (tokenizer.json, *.model, …).
-
-The function exported to callers is:
-
-    build_intelligent_tokenizer(repo_id, token=None) → tokenizer
+Smart (but pragmatic) tokenizer loader for arbitrary HF repos.
 """
 
-
 from __future__ import annotations
-
-import importlib.util
-import json
-import os
-import runpy
-import tempfile
+import importlib.util, json, os, re, tempfile
 from pathlib import Path
 from typing import Dict, List
 
@@ -38,56 +19,55 @@ from transformers import (
 )
 
 # --------------------------------------------------------------------------- #
-# OpenAI client (reads key from .keys.env/.env or real environment)           #
+# OpenAI                                                                      #
 # --------------------------------------------------------------------------- #
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
+
 # --------------------------------------------------------------------------- #
-# 1. Ask GPT to read README / model-card and spit out a code snippet          #
+# hard-coded one-offs                                                         #
+# --------------------------------------------------------------------------- #
+_OVERRIDES: dict[str, str] = {
+    "mistralai/Pixtral-12B-2409": "mistralai/Mistral-7B-v0.1",
+}
+
+# --------------------------------------------------------------------------- #
+# README → GPT small-snippet route                                            #
 # --------------------------------------------------------------------------- #
 _README_SYSTEM = (
     "You are an expert in Hugging-Face repos.\n"
-    "Given this README, reply ONLY with JSON:\n"
+    "Given this README, reply ONLY with JSON: "
     '{ "code": "<python that defines `tokenizer`>" }'
 )
-# ---------------------------------------------------------------------------
-# Hard-coded “known exceptions” where a model re-uses another repo’s tokenizer
-# ---------------------------------------------------------------------------
-_OVERRIDES = {
-    "mistralai/Pixtral-12B-2409": "mistralai/Mistral-7B-v0.1",
-    # you can add more one-offs here if other models do the same
-}
-
 
 def _try_readme_snippet(repo_id: str, files: List[str], **hf_auth):
     readme_file = next((f for f in files if "readme" in f.lower()), None)
     if not readme_file:
         return None
 
-    # Download just the README so we stay fast/cheap
     local_dir = snapshot_download(
-        repo_id, allow_patterns=[readme_file], **hf_auth, local_dir=tempfile.mkdtemp()
+        repo_id, allow_patterns=[readme_file],
+        local_dir=tempfile.mkdtemp(), **hf_auth
     )
-    readme_path = Path(local_dir) / readme_file
-    text = readme_path.read_text(encoding="utf-8")[:8000]  # truncate
+    text = (Path(local_dir) / readme_file).read_text(encoding="utf-8")[:8000]
 
     chat = [
         {"role": "system", "content": _README_SYSTEM},
-        {"role": "user", "content": text},
+        {"role": "user",   "content": text},
     ]
     try:
         rsp = client.chat.completions.create(
             model="gpt-4o-mini", messages=chat, temperature=0
         )
-        code = json.loads(rsp.choices[0].message.content)["code"]
+        raw = rsp.choices[0].message.content.strip()
+        code = json.loads(raw)["code"]        # <- may raise, we catch below
 
-        # Write to temp       → import     → grab `tokenizer`
-        f = tempfile.NamedTemporaryFile("w+", suffix=".py", delete=False)
-        f.write(code + "\n__tok__ = tokenizer\n")
-        f.close()
+        tmp = tempfile.NamedTemporaryFile("w+", suffix=".py", delete=False)
+        tmp.write(code + "\n__tok__ = tokenizer\n")
+        tmp.close()
 
-        spec = importlib.util.spec_from_file_location("tokmod", f.name)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)  # type: ignore
+        spec = importlib.util.spec_from_file_location("toktmp", tmp.name)
+        mod  = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)          # type: ignore
         tok = mod.__tok__
         tok._meta = {"strategy": "README+GPT"}
         return tok
@@ -95,176 +75,127 @@ def _try_readme_snippet(repo_id: str, files: List[str], **hf_auth):
         print(f"[auto_tokenizer] README path failed → {e}")
         return None
 
-
 # --------------------------------------------------------------------------- #
-# 2. Ask GPT to choose tokenizer class + files from file-listing              #
+# GPT file-list recipe route                                                  #
 # --------------------------------------------------------------------------- #
 _FILES_SYSTEM = (
     "You are an expert in HF model repos.\n"
-    "Given a file list, reply ONLY with valid JSON:\n"
-    "{"
-    '  "tokenizer_class": "AutoTokenizer|LlamaTokenizer|LlamaTokenizerFast|SentencePiece",'
-    '  "tokenizer_files": ["file1", "file2"]'
-    "}"
+    "Given a file list, reply ONLY with JSON:\n"
+    '{ "tokenizer_class": "...", "tokenizer_files": [...] }'
 )
 
-
 def _ask_gpt_recipe(repo_id: str, files: List[str]):
-    prompt = f"Repo: {repo_id}\nFiles:\n" + "\n".join(files)
     chat = [
         {"role": "system", "content": _FILES_SYSTEM},
-        {"role": "user", "content": prompt},
+        {"role": "user",   "content": f"Repo: {repo_id}\nFiles:\n" + "\n".join(files)},
     ]
-    rsp = client.chat.completions.create(
+    rsp  = client.chat.completions.create(
         model="gpt-4o-mini", messages=chat, temperature=0
     )
     return json.loads(rsp.choices[0].message.content)
 
-
 def _build_from_recipe(repo_id: str, recipe: Dict, **hf_auth):
-    klass = recipe["tokenizer_class"]
-    needed = recipe["tokenizer_files"]
-    local = Path(
-        snapshot_download(repo_id, allow_patterns=needed, **hf_auth, local_dir=tempfile.mkdtemp())
-    )
+    cls, needed = recipe["tokenizer_class"], recipe["tokenizer_files"]
+    local = Path(snapshot_download(repo_id, allow_patterns=needed,
+                                   local_dir=tempfile.mkdtemp(), **hf_auth))
 
-    if klass == "AutoTokenizer":
+    if cls == "AutoTokenizer":
         tok = AutoTokenizer.from_pretrained(local, trust_remote_code=True, legacy=True)
-    elif klass == "LlamaTokenizerFast":
+    elif cls == "LlamaTokenizerFast":
         tok = LlamaTokenizerFast(vocab_file=str(local / needed[0]))
-    elif klass == "LlamaTokenizer":
+    elif cls == "LlamaTokenizer":
         tok = LlamaTokenizer(vocab_file=str(local / needed[0]))
-    elif klass == "SentencePiece":
-        spm_path = local / needed[0]
-        tok = LlamaTokenizerFast(vocab_file=str(spm_path))
+    elif cls == "SentencePiece":
+        tok = LlamaTokenizerFast(vocab_file=str(local / needed[0]))
     else:
-        raise ValueError(f"GPT suggested unknown class {klass}")
+        raise ValueError(f"GPT suggested unknown class {cls}")
 
-    tok._meta = {"strategy": f"GPT:{klass}"}
+    tok._meta = {"strategy": f"GPT:{cls}"}
     return tok
 
-
 # --------------------------------------------------------------------------- #
-# 3. Heuristics (tokenizer.json, *.model)                                     #
+# heuristics                                                                  #
 # --------------------------------------------------------------------------- #
-def _heuristic_tokenizer(local_dir: Path):
-    # tokenizer.json
-    json_tok = next(local_dir.rglob("tokenizer.json"), None)
-    if json_tok:
-        tok = PreTrainedTokenizerFast(tokenizer_file=str(json_tok))
-        tok._meta = {"strategy": "heuristic:tokenizer.json"}
-        return tok
+def _heuristic_tokenizer(local: Path):
+    j = next(local.rglob("tokenizer.json"), None)
+    if j:
+        t = PreTrainedTokenizerFast(tokenizer_file=str(j))
+        t._meta = {"strategy": "heuristic:tokenizer.json"}
+        return t
 
-    # *.model
-    spm_tok = next(local_dir.rglob("*.model"), None)
-    if spm_tok:
-        tok = LlamaTokenizerFast(
-            vocab_file=str(spm_tok),
-            bos_token="<s>",
-            eos_token="</s>",
-            unk_token="<unk>",
+    spm = next(local.rglob("*.model"), None)
+    if spm:
+        t = LlamaTokenizerFast(
+            vocab_file=str(spm), bos_token="<s>", eos_token="</s>", unk_token="<unk>"
         )
-        tok._meta = {"strategy": f"heuristic:{spm_tok.name}"}
-        return tok
-
+        t._meta = {"strategy": f"heuristic:{spm.name}"}
+        return t
     return None
 
-import re, textwrap
-
+# --------------------------------------------------------------------------- #
+# naïve README scan for “tokenizer = X”                                       #
+# --------------------------------------------------------------------------- #
 _PATTERNS = [
-    # explicit AutoTokenizer call with or without org prefix
-    re.compile(
-        r"AutoTokenizer\.from_pretrained\(\s*[\"']([\w\-.]+\/)?([\w\-.]+?7b[^\s\"']*)[\"']",
-        re.I,
-    ),
-    # direct bare mention … e.g.  “Mistral-7B-v0.1” or “Mixtral-8x7B-Instruct”
-    re.compile(r"\b([\w\-.]*7b[^\s\"'()]+)", re.I),
-    # generic “tokenizer: '<name>'” lines
-    re.compile(
-        r"tokenizer\s*[:=]\s*[\"']([\w\-.]+\/)?([\w\-.]+)[\"']",
-        re.I,
-    ),
+    re.compile(r"tokenizer\s*[:=]\s*[\"']([\w\-./]+)[\"']", re.I),
+    re.compile(r"AutoTokenizer\.from_pretrained\(\s*[\"']([\w\-./]+)[\"']", re.I),
 ]
 
-
-def _external_repo_in_readme(readme_path: Path) -> str | None:
-    """
-    Scan up to the first ~4 kB of the README for any of the patterns above.
-    Return the repo-id if found, else None.
-    """
+def _external_repo_in_readme(readme: Path):
     try:
-        text = readme_path.read_text(encoding="utf-8", errors="ignore")[:4096]
+        txt = readme.read_text(encoding="utf-8", errors="ignore")[:4096]
     except Exception:
         return None
-
     for pat in _PATTERNS:
-        m = pat.search(text)
+        m = pat.search(txt)
         if m:
-            repo = m.group(1).strip().rstrip(")").rstrip(",")
-            if "/" in repo and len(repo.split("/")[1]) > 2:
-                return repo
+            return m.group(1)
     return None
 
 # --------------------------------------------------------------------------- #
-# 4. Public entry point                                                      #
+# public entry                                                                #
 # --------------------------------------------------------------------------- #
 def build_intelligent_tokenizer(repo_id: str, *, token: str | None = None):
-    if repo_id.lower().startswith("mistralai/pixtral"):
-        base_tok = "mistralai/Mistral-7B-v0.2"
-        print(f"[auto_tokenizer] Pixtral detected → using tokenizer from {base_tok}")
-        return AutoTokenizer.from_pretrained(base_tok,
-                                             trust_remote_code=True,
-                                             token=token)
-    
+    # 0) hard-coded overrides --------------------------------------------------
+    if repo_id in _OVERRIDES:
+        tgt = _OVERRIDES[repo_id]
+        print(f"[auto_tokenizer] override → {tgt}")
+        tok = AutoTokenizer.from_pretrained(tgt, trust_remote_code=True, token=token)
+        tok._meta = {"strategy": f"override:{tgt}"}
+        return tok
+
     hf_auth = {"token": token} if token else {}
 
-    local_tmp = Path(snapshot_download(repo_id, allow_patterns=["README*"], **hf_auth,
-                                       local_dir=tempfile.mkdtemp()))
-    readme = next(local_tmp.rglob("*README*"), None)
-
-    # --- 0️⃣ explicit override ------------------------------------------------
-    if repo_id in _OVERRIDES:
-        target = _OVERRIDES[repo_id]
-        print(f"[auto_tokenizer] hard-coded override → {target}")
-        tok = AutoTokenizer.from_pretrained(target, trust_remote_code=True, **hf_auth)
-        tok._meta = {"strategy": f"override:{target}"}
-        return tok
-
-
-    # ➊ external-tokenizer shortcut
+    # 1) README explicit external-repo hint -----------------------------------
+    readme_dir = snapshot_download(repo_id, allow_patterns=["README*"],
+                                   local_dir=tempfile.mkdtemp(), **hf_auth)
+    readme = next(Path(readme_dir).rglob("*README*"), None)
     if readme:
-        ext_repo = _external_repo_in_readme(readme)
-
-        if ext_repo and "/" not in repo:              # no org given → inherit from src repo
-            org = repo_id.split("/")[0]
-            ext_repo = f"{org}/{ext_repo}"
-
-
-        if ext_repo:
-            print(f"[auto_tokenizer] README points to external tokenizer → {ext_repo}")
-            tok = AutoTokenizer.from_pretrained(ext_repo, trust_remote_code=True, **hf_auth)
-            tok._meta = {"strategy": f"external:{ext_repo}"}
+        ext = _external_repo_in_readme(readme)
+        if ext:
+            if "/" not in ext:                       # no org → inherit
+                ext = f"{repo_id.split('/')[0]}/{ext}"
+            print(f"[auto_tokenizer] README points to → {ext}")
+            tok = AutoTokenizer.from_pretrained(ext, trust_remote_code=True, **hf_auth)
+            tok._meta = {"strategy": f"external:{ext}"}
             return tok
 
+    # 2) README-snippet route --------------------------------------------------
     files = list_repo_files(repo_id, **hf_auth)
+    t = _try_readme_snippet(repo_id, files, **hf_auth)
+    if t:
+        return t
 
-    # 1️⃣ README route
-    tok = _try_readme_snippet(repo_id, files, **hf_auth)
-    if tok:
-        return tok
-
-    # 2️⃣ GPT file-list route
+    # 3) GPT file-list route ---------------------------------------------------
     try:
         recipe = _ask_gpt_recipe(repo_id, files)
-        tok = _build_from_recipe(repo_id, recipe, **hf_auth)
-        return tok
+        return _build_from_recipe(repo_id, recipe, **hf_auth)
     except Exception as e:
         print(f"[auto_tokenizer] GPT recipe path failed → {e}")
 
-    # 3️⃣ Heuristic route
-    local_all = Path(snapshot_download(repo_id, **hf_auth, local_dir=tempfile.mkdtemp()))
-    tok = _heuristic_tokenizer(local_all)
-    if tok:
-        return tok
+    # 4) heuristic fallback ----------------------------------------------------
+    local = Path(snapshot_download(repo_id, local_dir=tempfile.mkdtemp(), **hf_auth))
+    t = _heuristic_tokenizer(local)
+    if t:
+        return t
 
     raise RuntimeError(f"[auto_tokenizer] Could not build tokenizer for {repo_id}")
