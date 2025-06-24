@@ -37,43 +37,45 @@ def _ask_openai(repo_id: str, file_list: List[str]) -> Dict[str, Any]:
     return json.loads(resp.choices[0].message.content)
 
 
-# --------------------------------------------------------------------------------------
-# 2) Build tokenizer from the answer
-# --------------------------------------------------------------------------------------
-def _build_from_recipe(repo_id: str, recipe: Dict[str, Any], **hf_auth) -> Tuple[Any, str]:
-    klass = recipe["tokenizer_class"]
-    needed = recipe["tokenizer_files"]
-    local_dir = snapshot_download(repo_id, allow_patterns=needed, **hf_auth)
+# ---------------------------------------------------------------------
+# 2) Build a tokenizer from the OpenAI “recipe”
+# ---------------------------------------------------------------------
+def _build_from_recipe(repo_id: str, recipe: dict, **hf_auth):
+    """
+    Returns
+    -------
+    tok       : the built tokenizer
+    strategy  : short string for logging
+    """
+    klass   = recipe["tokenizer_class"]          # e.g. "AutoTokenizer"
+    needed  = recipe["tokenizer_files"]          # list of file names
+    local   = snapshot_download(repo_id,
+                                allow_patterns=needed,
+                                **hf_auth)
 
+    # ---------- 1. try the normal AutoTokenizer route -----------------
     if klass == "AutoTokenizer":
         try:
-            # first try the normal way
-            tok = AutoTokenizer.from_pretrained(local_dir,
-                                                trust_remote_code=True,
-                                                **hf_auth)
+            tok = AutoTokenizer.from_pretrained(
+                    local,
+                    trust_remote_code=True,
+                    legacy=True,          # allow older tokenizers
+                    **hf_auth)
             tok._meta = {"strategy": "auto"}
             return tok, "auto"
-        except Exception as e:
-            # ── normal load failed → look for an *.model sitting next to the JSON
-            spm_file = next(Path(local_dir).rglob("*.model"), None)
-            if spm_file is None:
-                raise                      # nothing else we can do
-            tok = LlamaTokenizerFast(vocab_file=str(spm_file))
-            tok._meta = {"strategy": f"spm-direct:{spm_file.name}"}
-            return tok, tok._meta["strategy"]
-    elif klass == "LlamaTokenizerFast":
-        tok = LlamaTokenizerFast(vocab_file=str(Path(local_dir) / needed[0]))
-    elif klass == "LlamaTokenizer":
-        tok = LlamaTokenizer(vocab_file=str(Path(local_dir) / needed[0]))
-    elif klass == "SentencePiece":
-        # bare sentence-piece -> wrap in LlamaTokenizerFast (works for Pixtral)
-        model_file = Path(local_dir) / needed[0]
-        tok = LlamaTokenizerFast(vocab_file=str(model_file))
-    else:
-        raise ValueError(f"Unknown tokenizer class {klass}")
+        except Exception:                 # <-- anything goes wrong → fall through
+            pass                          # we’ll attempt a manual SPM build
 
-    # record meta for logging
-    tok._meta = {"strategy": f"openai:{klass}"}
+    # ---------- 2. manual SentencePiece fallback ----------------------
+    spm_file = next(Path(local).rglob("*.model"), None)
+    if spm_file is None:
+        raise RuntimeError(f"No *.model file found in {repo_id} - cannot build tokenizer")
+
+    tok = LlamaTokenizerFast(vocab_file=str(spm_file),
+                             bos_token="<s>",
+                             eos_token="</s>",
+                             unk_token="<unk>")
+    tok._meta = {"strategy": f"spm-direct:{spm_file.name}"}
     return tok, tok._meta["strategy"]
 
 
