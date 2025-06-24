@@ -162,17 +162,41 @@ def _heuristic_tokenizer(local_dir: Path):
 
     return None
 
-import re
-_TOKENIZER_RE = re.compile(
-    r'from_pretrained\(\s*["\']([\w\-_]+\/[\w\-.]+)["\']\s*\)', re.IGNORECASE
-)
+import re, textwrap
+
+_PATTERNS = [
+    # explicit AutoTokenizer call
+    re.compile(
+        r"AutoTokenizer\.from_pretrained\(\s*[\"']([^\"']+/[^\"']+)[\"']",
+        re.I,
+    ),
+    # direct mention of another repo – e.g.  mistralai/Mistral-7B-v0.1
+    re.compile(r"([\w\-.]+\/mistral[^\s\"'()]+7b[^\s\"'()]+)", re.I),
+    # generic “tokenizer = '<org>/<name>'”
+    re.compile(
+        r"tokenizer\s*[:=]\s*[\"']([\w\-.]+\/[\w\-.]+)[\"']",
+        re.I,
+    ),
+]
 
 
 def _external_repo_in_readme(readme_path: Path) -> str | None:
-    text = readme_path.read_text(encoding="utf-8", errors="ignore").splitlines()
-    snippet = "\n".join(text[:1000])  # keep it quick
-    m = _TOKENIZER_RE.search(snippet)
-    return m.group(1) if m else None
+    """
+    Scan up to the first ~4 kB of the README for any of the patterns above.
+    Return the repo-id if found, else None.
+    """
+    try:
+        text = readme_path.read_text(encoding="utf-8", errors="ignore")[:4096]
+    except Exception:
+        return None
+
+    for pat in _PATTERNS:
+        m = pat.search(text)
+        if m:
+            repo = m.group(1).strip().rstrip(")").rstrip(",")
+            if "/" in repo and len(repo.split("/")[1]) > 2:
+                return repo
+    return None
 
 # --------------------------------------------------------------------------- #
 # 4. Public entry point                                                      #
