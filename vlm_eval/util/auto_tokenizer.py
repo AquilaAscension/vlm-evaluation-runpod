@@ -46,16 +46,21 @@ def _build_from_recipe(repo_id: str, recipe: Dict[str, Any], **hf_auth) -> Tuple
     local_dir = snapshot_download(repo_id, allow_patterns=needed, **hf_auth)
 
     if klass == "AutoTokenizer":
-        # Pixtral pattern: tekken.json + tekken.model
-        model_files = [f for f in needed if f.endswith(".model")]
-        if model_files:
-            sp_model = Path(local_dir) / model_files[0]
-            tok = LlamaTokenizerFast(vocab_file=str(sp_model))
-            tok._meta = {"strategy": f"spm-direct:{sp_model.name}"}
-        else:
-            tok = AutoTokenizer.from_pretrained(
-                local_dir, trust_remote_code=True, **hf_auth
-            )
+        try:
+            # first try the normal way
+            tok = AutoTokenizer.from_pretrained(local_dir,
+                                                trust_remote_code=True,
+                                                **hf_auth)
+            tok._meta = {"strategy": "auto"}
+            return tok, "auto"
+        except Exception as e:
+            # ── normal load failed → look for an *.model sitting next to the JSON
+            spm_file = next(Path(local_dir).rglob("*.model"), None)
+            if spm_file is None:
+                raise                      # nothing else we can do
+            tok = LlamaTokenizerFast(vocab_file=str(spm_file))
+            tok._meta = {"strategy": f"spm-direct:{spm_file.name}"}
+            return tok, tok._meta["strategy"]
     elif klass == "LlamaTokenizerFast":
         tok = LlamaTokenizerFast(vocab_file=str(Path(local_dir) / needed[0]))
     elif klass == "LlamaTokenizer":
