@@ -33,9 +33,7 @@ class OpenHF:
         # ------------------------------------------------------------------ #
         #  🔑 robust tokenizer loading
         # ------------------------------------------------------------------ #
-        self.tokenizer = resolve_tokenizer(repo,
-                                   trust_remote_code=True,
-                                   use_fast=True)
+        self.tokenizer = resolve_tokenizer(repo)
         strategy = getattr(self.tokenizer, "_meta", {}).get("strategy", "auto")
         print(f"[OpenHF] tokenizer loaded via «{strategy}»")
 
