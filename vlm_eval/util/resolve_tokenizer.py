@@ -2,6 +2,7 @@
 from __future__ import annotations
 import json, os, pathlib
 from transformers import AutoTokenizer
+import importlib
 
 # --------------------------------------------------
 # 0 · tiny on-disk cache  (~400 B/entry)
@@ -18,10 +19,12 @@ def _cache_write() -> None:
 # --------------------------------------------------
 # 1 · your GPT-4-assisted helper (if present)
 # --------------------------------------------------
+
 try:
-    from vlm_eval.util.auto_tokenizer import build_or_lookup_tokenizer
+    _at = importlib.import_module("vlm_eval.util.auto_tokenizer")
+    build_or_lookup_tokenizer = getattr(_at, "build_or_lookup_tokenizer", None)
 except ModuleNotFoundError:
-    build_or_lookup_tokenizer = None               # unit-tests / offline
+    build_or_lookup_tokenizer = None        # module truly absent
 
 # --------------------------------------------------
 # 2 · deterministic heuristic fallbacks

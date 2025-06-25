@@ -199,3 +199,5 @@ def build_intelligent_tokenizer(repo_id: str, *, token: str | None = None):
         return t
 
     raise RuntimeError(f"[auto_tokenizer] Could not build tokenizer for {repo_id}")
+
+build_or_lookup_tokenizer = build_intelligent_tokenizer
