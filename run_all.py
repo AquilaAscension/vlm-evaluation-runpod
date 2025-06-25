@@ -52,19 +52,32 @@ def main(repo_id_list):
 def download_once(repo):
     from huggingface_hub import snapshot_download
     from huggingface_hub.errors import GatedRepoError
+    from pathlib import Path
+    import os, shutil
 
     try:
-        return snapshot_download(
+        dest = snapshot_download(
             repo_id=repo,
             resume_download=True,
             local_files_only=False,
-            token=os.getenv("HF_TOKEN"),   # will be None if public
+            token=os.getenv("HF_TOKEN"),
         )
+        # alias consolidated.safetensors → model.safetensors
+        root = Path(dest)
+        src  = root / "consolidated.safetensors"
+        dst  = root / "model.safetensors"
+        if src.exists() and not dst.exists():
+            try:
+                os.symlink(src, dst)
+            except OSError:
+                shutil.copyfile(src, dst)
+        return dest
+
     except GatedRepoError as e:
         raise SystemExit(
-            f"\n‼ The repo “{repo}” is gated on Hugging Face.\n"
-            "   • Visit the model page and click “Agree & access”.\n"
-            "   • Make sure your PAT in .keys.env is authorised for that repo.\n"
+            f"\n‼ {repo} is gated on Hugging Face.\n"
+            "   • Click “Agree & access” on the model page\n"
+            "   • Add a PAT with access to .keys.env\n"
         ) from e
 
 
