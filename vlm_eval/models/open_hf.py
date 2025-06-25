@@ -66,7 +66,27 @@ class OpenHF:
         is_pixtral = "pixtral" in repo.lower() or "janus" in repo.lower()  # add others as needed
 
         if is_pixtral:
-            cfg = AutoConfig.from_pretrained(repo, trust_remote_code=True, **hf_auth)
+            # 🔧 CONFIG-FIX ────────────────────────────────────────────────
+            from glob import glob
+            import json
+
+            # 1) look for any alt config that already mentions 12B
+            alt_cfg = next(
+                (Path(p) for p in snap.glob("**/config*12*.json")), None
+            )
+            if alt_cfg:
+                cfg = AutoConfig.from_pretrained(alt_cfg, trust_remote_code=True)
+            else:
+                # 2) load default and patch obvious size fields
+                cfg = AutoConfig.from_pretrained(repo, trust_remote_code=True, **hf_auth)
+                if cfg.hidden_size == 4096:            # clearly the 7-B template
+                    cfg.hidden_size         = 5120
+                    cfg.intermediate_size   = 13824     # 5120 * 2.7  (Mistral ratio)
+                    cfg.num_attention_heads = 40        # 5120 / 128
+                    cfg.num_key_value_heads = 8
+                    print("[OpenHF] patched config → 12-B dims (hidden 5120)")
+            # ──────────────────────────────────────────────────────────────
+
             self.model = AutoModelForCausalLM.from_pretrained(
                 repo,
                 config=cfg,
@@ -75,14 +95,7 @@ class OpenHF:
                 trust_remote_code=True,
                 **hf_auth,
             )
-        else:
-            self.model = AutoModel.from_pretrained(
-                repo,
-                torch_dtype=torch.float16,
-                device_map="auto",
-                trust_remote_code=True,
-                **hf_auth,
-            )
+
 
 
     # ====================================================================== #
