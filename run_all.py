@@ -3,6 +3,8 @@ import argparse, json, os, random, subprocess, sys, time
 from pathlib import Path
 from datetime import datetime
 import torch
+from vlm_eval.util.keyloader import ensure_keys
+ensure_keys()
 
 SEED = 42          # global reproducibility knob
 random.seed(SEED); torch.manual_seed(SEED)
@@ -44,12 +46,23 @@ def main(repo_id_list):
                 mark_done(model_name, ds, "_scored")
 
 def download_once(repo):
-    """Sync repo to HF cache once, regardless of earlier runs."""
     from huggingface_hub import snapshot_download
-    cache_dir = os.environ.get("HF_HOME", "~/.cache/huggingface")
-    dest = snapshot_download(repo_id=repo, cache_dir=cache_dir,
-                             resume_download=True, local_files_only=False)
-    return dest
+    from huggingface_hub.errors import GatedRepoError
+
+    try:
+        return snapshot_download(
+            repo_id=repo,
+            resume_download=True,
+            local_files_only=False,
+            token=os.getenv("HF_TOKEN"),   # will be None if public
+        )
+    except GatedRepoError as e:
+        raise SystemExit(
+            f"\n‼ The repo “{repo}” is gated on Hugging Face.\n"
+            "   • Visit the model page and click “Agree & access”.\n"
+            "   • Make sure your PAT in .keys.env is authorised for that repo.\n"
+        ) from e
+
 
 def run(cmd):
     print("  $", *cmd)
