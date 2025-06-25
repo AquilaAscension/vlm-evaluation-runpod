@@ -36,8 +36,12 @@ def main(repo_id_list):
 
             # EVALUATE -------------------------------------------------------
             if not already_done(model_name, ds, "_eval"):
-                run(EVAL_CMD + ["--model", repo, "--dataset", ds,
-                                "--local_model_path", snapshot_path])
+                run(EVAL_CMD + [
+                    "--model_family", "open-hf",        # tells the harness which loader
+                    "--model_id",      repo,            # HF repo string
+                    "--model_dir",     snapshot_path,   # local path (avoids re-download)
+                    "--dataset",       ds,              # text-vqa-slim, etc.
+                ])
                 mark_done(model_name, ds, "_eval")
 
             # SCORE ----------------------------------------------------------
