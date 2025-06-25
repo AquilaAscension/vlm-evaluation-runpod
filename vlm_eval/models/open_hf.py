@@ -63,7 +63,7 @@ class OpenHF:
             except OSError:
                 shutil.copyfile(src, dst)    # fallback inside containers
 
-       is_pixtral = "pixtral" in repo.lower() or "janus" in repo.lower()  # add others as needed
+        is_pixtral = "pixtral" in repo.lower() or "janus" in repo.lower()  # add others as needed
 
         if is_pixtral:
             cfg = AutoConfig.from_pretrained(repo, trust_remote_code=True, **hf_auth)
