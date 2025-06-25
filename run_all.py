@@ -12,7 +12,7 @@ random.seed(SEED); torch.manual_seed(SEED)
 DATASETS = ["text-vqa-slim", "vqav2-slim", "gqa-slim"]
 EVAL_CMD = ["python", "scripts/evaluate.py"]
 SCORE_CMD = ["python", "scripts/score.py"]
-DATA_ROOT = "/home/ubuntu/datasets/vlm-evaluation/datasets"
+DATA_ROOT = "/home/ubuntu/datasets/vlm-evaluation"
 
 def mark_done(model, ds, tag):
     Path(f"~/prismatic-vlms/results/{model}/{ds}/{tag}.done"
