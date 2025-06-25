@@ -2,7 +2,8 @@
 OpenHF – generic loader for any open-weights VLM on HuggingFace.
 """
 
-from pathlib import Path
+from pathlib import Path, PosixPath
+import os, shutil
 from typing import Optional
 
 import torch
@@ -53,6 +54,16 @@ class OpenHF:
             print(f"[OpenHF] No processor found → {e}")
             self.processor = None  # or just use tokenizer directly
 
+        snap = Path(model_dir)               # model_dir is already passed in
+
+        src = snap / "consolidated.safetensors"
+        dst = snap / "model.safetensors"     # one of HF’s recognised names
+
+        if src.exists() and not dst.exists():
+            try:
+                os.symlink(src, dst)         # cheap if filesystem allows
+            except OSError:
+                shutil.copyfile(src, dst)    # fallback inside containers
 
         self.model = AutoModel.from_pretrained(
             repo,
