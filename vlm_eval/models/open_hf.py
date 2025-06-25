@@ -115,4 +115,4 @@ class OpenHF:
 
     def get_prompt_fn(self, dataset_family: str):
         # most vision-llms use the plain question for VQA; override if you need special tokens
-        return None
+        return lambda q: q
