@@ -40,7 +40,7 @@ def main(repo_id_list):
                     "--model_family", "open-hf",        # tells the harness which loader
                     "--model_id",      repo,            # HF repo string
                     "--model_dir",     snapshot_path,   # local path (avoids re-download)
-                    "--dataset",       ds,              # text-vqa-slim, etc.
+                    "--dataset.type",       ds,              # text-vqa-slim, etc.
                 ])
                 mark_done(model_name, ds, "_eval")
 
