@@ -10,6 +10,7 @@ from .open_hf import OpenHF
 from .anthropic_loader import AnthropicVLM
 from .google_loader import GeminiVLM
 from .janus import JanusVLM
+from .pixtral_vllm import PixtralVLLM
 
 # === Initializer Dispatch by Family ===
 FAMILY2INITIALIZER = {
@@ -18,7 +19,8 @@ FAMILY2INITIALIZER = {
     "open-hf":        OpenHF,
     "anthropic":      AnthropicVLM,
     "google":         GeminiVLM,
-    "janus": JanusVLM
+    "janus": JanusVLM,
+    "pixtral-vllm":  PixtralVLLM,
 }
 
 def load_vlm(
@@ -31,12 +33,21 @@ def load_vlm(
     max_length=128,
     temperature=1.0,
 ) -> VLM:
+    
+    if "pixtral" in model_id.lower():
+        return PixtralVLLM(
+            model_id=model_id,
+            hf_token=hf_token,
+            max_length=max_length,
+            temperature=temperature,
+        )
+
     if model_family == "open-hf":
         # ------------------------------------------------------------------
         # Pass the **full repo-id** (run_dir) to OpenHF as its first arg
         # ------------------------------------------------------------------
         return OpenHF(
-            str(run_dir),                 # <— deepseek-ai/Janus-Pro-7B
+            str(run_dir),
             hf_token=hf_token,
             load_precision=load_precision,
             max_length=max_length,
