@@ -8,7 +8,7 @@ from typing import Optional
 
 import torch
 from PIL import Image
-from transformers import AutoModel, AutoProcessor
+from transformers import AutoModel, AutoProcessor, AutoConfig, AutoModelForCausalLM
 
 from vlm_eval.util.resolve_tokenizer import resolve_tokenizer
 
@@ -63,13 +63,26 @@ class OpenHF:
             except OSError:
                 shutil.copyfile(src, dst)    # fallback inside containers
 
-        self.model = AutoModel.from_pretrained(
-            repo,
-            torch_dtype=torch.float16,
-            device_map="auto",
-            trust_remote_code=True,
-            **hf_auth,
-        )
+]       is_pixtral = "pixtral" in repo.lower() or "janus" in repo.lower()  # add others as needed
+
+        if is_pixtral:
+            cfg = AutoConfig.from_pretrained(repo, trust_remote_code=True, **hf_auth)
+            self.model = AutoModelForCausalLM.from_pretrained(
+                repo,
+                config=cfg,
+                torch_dtype=torch.float16,
+                device_map="auto",
+                trust_remote_code=True,
+                **hf_auth,
+            )
+        else:
+            self.model = AutoModel.from_pretrained(
+                repo,
+                torch_dtype=torch.float16,
+                device_map="auto",
+                trust_remote_code=True,
+                **hf_auth,
+            )
 
     # ====================================================================== #
     #  Required interface methods
