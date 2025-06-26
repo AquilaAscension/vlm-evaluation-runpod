@@ -17,7 +17,7 @@ class PixtralVLLM:
             model           = model_id,
             tokenizer_mode  = "mistral",
             config_format   = "mistral",
-            download_dir    = Path.home() / ".cache" / "pixtral_vllm",
+            download_dir    = Path.home() / ".cache" / "pixtral",
             trust_remote_code=True,
             dtype="float16",
             tokenizer_kwargs = {"trust_remote_code": True},

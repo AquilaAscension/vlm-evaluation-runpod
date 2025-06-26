@@ -1,27 +1,52 @@
 from pathlib import Path
 from typing import Optional
-
 from vlm_eval.util.interfaces import VLM
 
-from .instructblip import InstructBLIP
-#from .llava import LLaVa
-from .prismatic import PrismaticVLM
-from .open_hf import OpenHF
-from .anthropic_loader import AnthropicVLM
-from .google_loader import GeminiVLM
-from .janus import JanusVLM
-from .pixtral_vllm import PixtralVLLM
+FAMILY2INITIALIZER = {}
 
-# === Initializer Dispatch by Family ===
-FAMILY2INITIALIZER = {
-    "instruct-blip": InstructBLIP,
-    "prismatic":      PrismaticVLM,
-    "open-hf":        OpenHF,
-    "anthropic":      AnthropicVLM,
-    "google":         GeminiVLM,
-    "janus": JanusVLM,
-    "pixtral-vllm":  PixtralVLLM,
-}
+try:
+    from .instructblip import InstructBLIP
+    FAMILY2INITIALIZER["instruct-blip"] = InstructBLIP
+except ImportError:
+    pass
+
+try:
+    from .prismatic import PrismaticVLM
+    FAMILY2INITIALIZER["prismatic"] = PrismaticVLM
+except ImportError:
+    pass
+
+try:
+    from .open_hf import OpenHF
+    FAMILY2INITIALIZER["open-hf"] = OpenHF
+except ImportError:
+    pass
+
+try:
+    from .anthropic_loader import AnthropicVLM
+    FAMILY2INITIALIZER["anthropic"] = AnthropicVLM
+except ImportError:
+    pass
+
+try:
+    from .google_loader import GeminiVLM
+    FAMILY2INITIALIZER["google"] = GeminiVLM
+except ImportError:
+    pass
+
+try:
+    from .janus import JanusVLM
+    FAMILY2INITIALIZER["janus"] = JanusVLM
+except ImportError:
+    pass
+
+try:
+    from .pixtral import PixtralVLLM
+    FAMILY2INITIALIZER["pixtral"] = PixtralVLLM
+except ImportError:
+    pass
+
+
 
 def load_vlm(
     model_family: str,
