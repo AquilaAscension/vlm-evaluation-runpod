@@ -60,8 +60,9 @@ def load_vlm(
 ) -> VLM:
     
     if "pixtral" in model_id.lower():
+        from .pixtral import PixtralVLLM
         return PixtralVLLM(
-            model_id=model_id,
+            model_id,
             hf_token=hf_token,
             max_length=max_length,
             temperature=temperature,
@@ -79,6 +80,10 @@ def load_vlm(
             temperature=temperature,
             ocr=ocr,
         )
+    
+    elif model_family == "open-hf" and "pixtral" in model_id.lower():
+        return PixtralVLLM(model_id=model_id, hf_token=hf_token)
+
 
     # all other families stay unchanged
     assert model_family in FAMILY2INITIALIZER, \

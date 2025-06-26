@@ -7,10 +7,10 @@ from typing import Optional
 import torch
 from PIL import Image
 from vllm import LLM, SamplingParams
-
+from vlm_eval.util.interfaces import VLM  # repo-wide base class
 from transformers import AutoTokenizer
 
-class PixtralVLLM:
+class PixtralVLLM(VLM):
     def __init__(self, model_id: str, hf_token: Optional[str] = None, **_):
         # vLLM auto-downloads the vision shards listed in tekken.json
         self.llm = LLM(
